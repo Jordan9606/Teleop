@@ -1,0 +1,90 @@
+services:
+  autoware:
+    build:
+      context: ./autoware-stack
+      dockerfile: Dockerfile
+    container_name: autoware-${ENV}
+
+    network_mode: "host"
+
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-7}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///tmp/cyclonedds.xml
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+
+    runtime: nvidia
+
+    privileged: true
+    stdin_open: true
+    tty: true
+
+    volumes:
+      - ./autoware-stack/autoware:/autoware
+      - ./autoware-stack/autoware_maps:/autoware_map
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
+
+  carla:
+    build:
+      context: ./carla-stack
+      dockerfile: Dockerfile
+    container_name: carla-sim
+
+    network_mode: "host"
+
+    runtime: nvidia
+    privileged: true
+
+    environment:
+      - DISPLAY=${DISPLAY}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
+    user: carla
+
+    stdin_open: true
+    tty: true
+
+    # Remove -RenderOffScreen below to see the CARLA window (needs DISPLAY set)
+    command: /bin/bash -c "/workspace/CarlaUE4.sh -quality-level=Low -world-port=2000"
+
+
+  carla-bridge:
+    build:
+      context: ./bridge
+      dockerfile: Dockerfile
+
+    container_name: carla-ros2-bridge
+
+    network_mode: "host"
+
+    depends_on:
+      - carla
+
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-7}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///tmp/cyclonedds.xml
+      # CARLA server address (localhost since both on host network)
+      - CARLA_HOST=127.0.0.1
+      - CARLA_PORT=2000
+      # Which CARLA vehicle blueprint to spawn
+      - CARLA_VEHICLE=vehicle.tesla.model3
+      # Index into the map's spawn point list
+      - CARLA_SPAWN_INDEX=0
+
+    volumes:
+      # Mount the TUM workspace install so the bridge can use tod_vehicle_msgs
+      # Also mount build/ because --symlink-install creates links from install/ → build/
+      - /home/jordan/teleoperated_driving/.dev_artifacts/install:/tum_install:ro
+      - /home/jordan/teleoperated_driving/.dev_artifacts/build:/build:ro
+
+    stdin_open: true
+    tty: true
