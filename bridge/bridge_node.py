@@ -224,8 +224,6 @@ class CarlaBridgeNode(Node):
         )
 
         # ── Publishers — Cameras ──────────────────────────────────────────────
-        # Topics match sensors-camera.yaml camera_topics_namespace + camera names
-        # so VehicleRtspServer (in tod_vehicle) picks them up and H264-encodes.
         self._camera_pub = self.create_publisher(
             Image, "/carla/ego_vehicle/frontcenter/image", reliable_qos
         )
@@ -266,13 +264,9 @@ class CarlaBridgeNode(Node):
         if vehicle_bp.has_attribute("role_name"):
             vehicle_bp.set_attribute("role_name", "ego_vehicle")
         spawn_points = self._world.get_map().get_spawn_points()
-        if not spawn_points:
-            raise RuntimeError("No spawn points available in CARLA map")
         if spawn_idx >= len(spawn_points):
             spawn_idx = 0
         vehicle = self._world.spawn_actor(vehicle_bp, spawn_points[spawn_idx])
-        if vehicle is None:
-            raise RuntimeError(f"spawn_actor returned None at spawn_idx={spawn_idx} — spawn point may be occupied")
         vehicle.set_autopilot(False)
         self.get_logger().info(f"Spawned: {vehicle.type_id} at spawn point {spawn_idx}")
         return vehicle
@@ -290,8 +284,6 @@ class CarlaBridgeNode(Node):
             carla.Rotation(pitch=-5.0),
         )
         camera = self._world.spawn_actor(cam_bp, transform, attach_to=self._vehicle)
-        if camera is None:
-            raise RuntimeError("spawn_actor returned None for front RGB camera — spawn point may be occupied")
         camera.listen(self._on_carla_camera_image)
         return camera
 
@@ -306,8 +298,6 @@ class CarlaBridgeNode(Node):
             carla.Rotation(pitch=-5.0, yaw=yaw),
         )
         camera = self._world.spawn_actor(cam_bp, transform, attach_to=self._vehicle)
-        if camera is None:
-            raise RuntimeError(f"spawn_actor returned None for side camera (yaw={yaw}) — spawn point may be occupied")
         if label == "leftcenter":
             camera.listen(self._on_left_camera_image)
         else:
@@ -325,8 +315,6 @@ class CarlaBridgeNode(Node):
             carla.Rotation(pitch=-90.0),
         )
         camera = self._world.spawn_actor(cam_bp, transform, attach_to=self._vehicle)
-        if camera is None:
-            raise RuntimeError("spawn_actor returned None for BEV camera — spawn point may be occupied")
         camera.listen(self._on_bev_camera_image)
         return camera
 
@@ -347,25 +335,20 @@ class CarlaBridgeNode(Node):
         msg.data = bytes(image.raw_data)
         self._bev_pub.publish(msg)
 
-    def _carla_image_to_ros(self, image, frame_id: str, bgr: bool = False) -> Image:
+    def _carla_image_to_ros(self, image, frame_id: str) -> Image:
         bgra = np.frombuffer(image.raw_data, dtype=np.uint8).reshape(
             (image.height, image.width, 4)
         )
-        if bgr:
-            img = np.ascontiguousarray(bgra[:, :, :3])
-            encoding = "bgr8"
-        else:
-            img = np.ascontiguousarray(bgra[:, :, [2, 1, 0]])
-            encoding = "rgb8"
+        rgb = bgra[:, :, [2, 1, 0]]
         msg = Image()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = frame_id
         msg.height = image.height
         msg.width = image.width
-        msg.encoding = encoding
+        msg.encoding = "rgb8"
         msg.is_bigendian = False
         msg.step = 3 * image.width
-        msg.data = img.tobytes()
+        msg.data = rgb.tobytes()
         return msg
 
     def _on_carla_camera_image(self, image):
@@ -373,7 +356,8 @@ class CarlaBridgeNode(Node):
         if self._front_frame_count % 2 != 0:
             return
         now = self.get_clock().now().to_msg()
-        self._camera_pub.publish(self._carla_image_to_ros(image, "ego_vehicle/frontcenter"))
+        img_msg = self._carla_image_to_ros(image, "ego_vehicle/frontcenter")
+        self._camera_pub.publish(img_msg)
         fx = fy = float(image.width) / (2.0 * math.tan(math.radians(60.0)))
         cx, cy = float(image.width) / 2.0, float(image.height) / 2.0
         ci = CameraInfo()
@@ -391,13 +375,15 @@ class CarlaBridgeNode(Node):
         self._left_frame_count += 1
         if self._left_frame_count % 2 != 0:
             return
-        self._left_camera_pub.publish(self._carla_image_to_ros(image, "ego_vehicle/leftcenter"))
+        img_msg = self._carla_image_to_ros(image, "ego_vehicle/leftcenter")
+        self._left_camera_pub.publish(img_msg)
 
     def _on_right_camera_image(self, image):
         self._right_frame_count += 1
         if self._right_frame_count % 2 != 0:
             return
-        self._right_camera_pub.publish(self._carla_image_to_ros(image, "ego_vehicle/rightcenter"))
+        img_msg = self._carla_image_to_ros(image, "ego_vehicle/rightcenter")
+        self._right_camera_pub.publish(img_msg)
 
     # ── Heartbeat ─────────────────────────────────────────────────────────────
 
@@ -529,12 +515,6 @@ class CarlaBridgeNode(Node):
     # ── State publishing ──────────────────────────────────────────────────────
 
     def _publish_state(self):
-        try:
-            self._publish_state_impl()
-        except Exception as e:
-            self.get_logger().error(f"_publish_state failed (CARLA actor invalid?): {e}")
-
-    def _publish_state_impl(self):
         self._check_heartbeat()
 
         now = self.get_clock().now().to_msg()
@@ -616,16 +596,10 @@ class CarlaBridgeNode(Node):
         for cam in ("_camera", "_left_camera", "_right_camera", "_bev_camera"):
             obj = getattr(self, cam, None)
             if obj:
-                try:
-                    obj.stop()
-                    obj.destroy()
-                except Exception as e:
-                    self.get_logger().error(f"Failed to destroy camera {cam}: {e}")
+                obj.stop()
+                obj.destroy()
         if hasattr(self, "_vehicle") and self._vehicle:
-            try:
-                self._vehicle.destroy()
-            except Exception as e:
-                self.get_logger().error(f"Failed to destroy vehicle: {e}")
+            self._vehicle.destroy()
         super().destroy_node()
 
 

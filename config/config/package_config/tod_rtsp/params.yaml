@@ -1,10 +1,10 @@
 /**:
-  vehicle_rtsp_server:
+  VehicleRtspServer:
     ros__parameters:
       rtsp_port: 8554
       image_output_format: "rgb8"
-      inactivity_timeout: 3.0
-  operator_rtsp_clients:
+      inactivity_timeout: 3600.0
+  OperatorRtspClients:
     ros__parameters:
       rtsp_port: 8554
       image_output_format: "rgb8"

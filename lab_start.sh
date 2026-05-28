@@ -18,12 +18,13 @@ fi
 echo "[lab] Starting CARLA..."
 docker start carla-sim
 
-echo "[lab] Waiting for CARLA to be ready..."
-until python3 -c "import carla; c=carla.Client('127.0.0.1',2000); c.set_timeout(3.0); c.get_world()" 2>/dev/null; do
+echo "[lab] Waiting for CARLA to be ready on port 2000..."
+until ss -tlnp | grep -q ':2000'; do
     if [ "$(docker inspect -f '{{.State.Status}}' carla-sim 2>/dev/null)" != "running" ]; then
         echo "[lab] CARLA crashed, restarting..."
         docker restart carla-sim
     fi
+    echo "[lab] still waiting..."
     sleep 5
 done
 echo "[lab] CARLA ready."
@@ -46,5 +47,9 @@ docker run -d \
 
 echo "[lab] Starting tod_vehicle..."
 docker compose -f "${REPO_DIR}/docker-compose.yaml" up -d tod_vehicle
+
+echo "[lab] Starting RTSP watchdog (auto-restarts tod_vehicle on RtspServer crash)..."
+pkill -f rtsp_watchdog.sh 2>/dev/null || true
+nohup bash "${REPO_DIR}/rtsp_watchdog.sh" >> /tmp/rtsp_watchdog.log 2>&1 &
 
 echo "[lab] All started. Waiting for laptop to connect..."

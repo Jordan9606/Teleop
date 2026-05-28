@@ -184,6 +184,8 @@ services:
       - ./config/dds:/home/${DOCKER_USERNAME:?}/wsp/config/dds:rw
       # Software config
       - ./config/config:/home/${DOCKER_USERNAME:?}/wsp/install/tod_launch/share/tod_launch/config:rw
+      # Override tod_rtsp package params (inactivity_timeout=0 prevents GStreamer SIGSEGV on reconnect)
+      - ./config/config/package_config/tod_rtsp/params.yaml:/home/${DOCKER_USERNAME:?}/wsp/install/tod_rtsp/share/tod_rtsp/config/package_config/tod_rtsp/params.yaml:ro
     environment:
       - LOAD_PCAN_DRIVERS=false
     command: ros2 launch tod_launch tod_vehicle.launch.py
