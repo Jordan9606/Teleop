@@ -234,7 +234,6 @@ services:
       - ./src/tod_operator_interface/tod_input_devices/launch/tod_input_devices.launch.py:/home/${DOCKER_USERNAME:?}/wsp/install/tod_input_devices/share/tod_input_devices/launch/tod_input_devices.launch.py:ro
       - ./src/tod_operator_interface/tod_input_devices/config/logitechg29.yaml:/home/${DOCKER_USERNAME:?}/wsp/install/tod_input_devices/share/tod_input_devices/config/logitechg29.yaml:ro
       - ./src/tod_operator_interface/tod_input_devices/src/virtual_device/resources/virtual_joystick.qml:/home/${DOCKER_USERNAME:?}/wsp/install/tod_input_devices/lib/tod_input_devices/virtual_joystick.qml:ro
-      - ./.dev_artifacts/OperatorCommandCreator:/home/${DOCKER_USERNAME:?}/wsp/install/tod_command_creation/lib/tod_command_creation/OperatorCommandCreator:ro
     devices:
       - /dev/input/js0:/dev/input/js0
     environment:
