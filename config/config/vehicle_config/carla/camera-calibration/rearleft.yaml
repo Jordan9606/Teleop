@@ -1,0 +1,20 @@
+image_width: 960
+image_height: 600
+camera_name: rearleft
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [ 277.13, 0., 480.0, 0., 277.13, 300.0, 0., 0., 1. ]
+camera_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [ 1., 0., 0., 0., 1., 0., 0., 0., 1. ]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [ 277.13, 0., 480.0, 0., 0., 277.13, 300.0, 0., 0., 0., 1., 0. ]

@@ -1,13 +1,41 @@
+rearleft:
+  TransformComponent:
+    Translation: [7., 8., 0.]
+    Rotation: [0., 0., 0.3]
+    Scale: [1., 6., 8.]
+  VideoComponent:
+    ProjectionMode: 0
+    GroundPlaneRadiusMin: 2
+    SphereRadius: 20
+    SphereLongitudeMin: -1.0472
+    SphereLongitudeMax: 1.0472
+    SphereLatitudeMin: -0.4
+    SphereLatitudeMax: 1.3
+
 frontcenter:
   TransformComponent:
-    Translation: [0., 0., 0.]
+    Translation: [7., 0., 0.]
     Rotation: [0., 0., 0.]
-    Scale: [1., 1., 1.]
+    Scale: [1., 8., 8.]
   VideoComponent:
-    ProjectionMode: 2
-    GroundPlaneRadiusMin: 5
+    ProjectionMode: 0
+    GroundPlaneRadiusMin: 2
     SphereRadius: 20
-    SphereLongitudeMin: -3.1415
-    SphereLongitudeMax: 3.1415
-    SphereLatitudeMin: -1.5708
+    SphereLongitudeMin: -1.0472
+    SphereLongitudeMax: 1.0472
+    SphereLatitudeMin: -0.4
+    SphereLatitudeMax: 1.3
+
+rearright:
+  TransformComponent:
+    Translation: [7., -8., 0.]
+    Rotation: [0., 0., -0.3]
+    Scale: [1., 6., 8.]
+  VideoComponent:
+    ProjectionMode: 0
+    GroundPlaneRadiusMin: 2
+    SphereRadius: 20
+    SphereLongitudeMin: -1.0472
+    SphereLongitudeMax: 1.0472
+    SphereLatitudeMin: -0.4
     SphereLatitudeMax: 1.3

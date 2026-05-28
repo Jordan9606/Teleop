@@ -15,3 +15,21 @@ Transform2:
   to: "frontcenter"
   translation_x_y_z: [2.0, 0.0, 1.4]
   rotation_yaw_pitch_roll: [0.0, -5.0, 0.0]
+
+Transform3:
+  from: "base_footprint"
+  to: "rearleft"
+  translation_x_y_z: [-0.5, 0.0, 1.7]
+  rotation_yaw_pitch_roll: [2.269, -0.0873, 0.0]
+
+Transform4:
+  from: "base_footprint"
+  to: "rearright"
+  translation_x_y_z: [-0.5, 0.0, 1.7]
+  rotation_yaw_pitch_roll: [-2.269, -0.0873, 0.0]
+
+Transform5:
+  from: "base_footprint"
+  to: "steering_wheel_base"
+  translation_x_y_z: [0.5, 0.2, 1.25]
+  rotation_yaw_pitch_roll: [0.0, 0.15, 0.0]
