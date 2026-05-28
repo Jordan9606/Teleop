@@ -95,6 +95,7 @@ ament_target_dependencies(tod_gl PUBLIC
     PCL 
     pcl_ros
     cv_bridge
+    ament_index_cpp
 )
 
 target_include_directories(tod_gl

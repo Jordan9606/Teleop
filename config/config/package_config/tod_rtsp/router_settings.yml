@@ -1,4 +1,5 @@
 ips: #ips for second router (or any other routers we might use in future)
-  - "10.0.0.10" #standard router
-  - "11.0.0.10" #tod router
+  - "10.88.209.223" #lab PC ZeroTier IP
+  # - "10.0.0.10" #standard router
+  # - "11.0.0.10" #tod router
   # - "127.0.0.1" #local ip

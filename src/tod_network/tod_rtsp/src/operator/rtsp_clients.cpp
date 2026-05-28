@@ -86,23 +86,30 @@ namespace tod_rtsp{
             for(auto cam : _cameras){
                 for (auto stream : cam->_streams) {
                     if (std::chrono::system_clock::now() >= stream->lastVideoInfoCalc + std::chrono::duration<double>(1.0)) {
-                        // calculate and set current video info
-                        std::lock_guard<std::mutex> lock(stream->mutex);
-                        stream->bitrate_kbit = stream->pktSizeSum_bit / 1024;
-                        stream->framerate = stream->frameCount;
-                        stream->rtpPaketCount = stream->pktSizeSum_bit = stream->frameCount = 0;
-                        stream->lastVideoInfoCalc = std::chrono::system_clock::now();
-                        stream->lastTimestamp = rclcpp::Time(0, 0, RCL_SYSTEM_TIME);
+                        {
+                            std::lock_guard<std::mutex> lock(stream->mutex);
+                            stream->bitrate_kbit = stream->pktSizeSum_bit / 1024;
+                            stream->framerate = stream->frameCount;
+                            stream->rtpPaketCount = stream->pktSizeSum_bit = stream->frameCount = 0;
+                            stream->lastVideoInfoCalc = std::chrono::system_clock::now();
+                        }
+                        {
+                            std::lock_guard<std::mutex> ts_lock(stream->camera->timestampMutex);
+                            stream->lastTimestamp = rclcpp::Time(0, 0, RCL_SYSTEM_TIME);
+                        }
                     }
                     // publish video info
                     tod_vehicle_msgs::msg::VideoInfo msg;
                     msg.header.stamp = this->now();
                     msg.header.frame_id = stream->name;
-                    msg.kbitrate = uint32_t(stream->bitrate_kbit);
-                    msg.framerate = uint32_t(stream->framerate);
-                    msg.image_height = uint32_t(stream->imgHeight_px);
-                    msg.image_width = uint32_t(stream->imgWidth_px);
-                    msg.image_nof_pixel = uint32_t(stream->imgHeight_px * stream->imgWidth_px);
+                    {
+                        std::lock_guard<std::mutex> lock(stream->mutex);
+                        msg.kbitrate = uint32_t(stream->bitrate_kbit);
+                        msg.framerate = uint32_t(stream->framerate);
+                        msg.image_height = uint32_t(stream->imgHeight_px);
+                        msg.image_width = uint32_t(stream->imgWidth_px);
+                        msg.image_nof_pixel = uint32_t(stream->imgHeight_px * stream->imgWidth_px);
+                    }
 
                     stream->pubVideoInfo->publish(msg);
                 }
@@ -186,7 +193,8 @@ namespace tod_rtsp{
                         g_warning("Received RTP header extension with unexpected size: %u bytes\n", size);
                     }
                 } else {
-                //  g_print("RTP header extension not found or error reading it.\n");
+                    // No extension — VehicleRtspServer binary may not add it; use system time so timestamp guard passes
+                    stream->lastTimestamp = rclcpp::Clock(RCL_SYSTEM_TIME).now();
                 }
 
                 gst_rtp_buffer_unmap(&rtp_buffer);
@@ -200,17 +208,9 @@ namespace tod_rtsp{
     static void onPadAdded(GstElement *element, GstPad *pad, gpointer data) {
         gchar *pad_name = gst_pad_get_name(pad);
         g_print("New pad %s added to element %s\n", pad_name, GST_ELEMENT_NAME(element));
-
-            GstPad *src_pad = gst_element_get_static_pad(element, pad_name);
-            if (src_pad) {
-                gst_pad_add_probe(src_pad, GST_PAD_PROBE_TYPE_BUFFER, (GstPadProbeCallback)extractRtpTimestampProbe, data, NULL);
-                gst_object_unref(src_pad);
-            } else {
-                g_print("Failed to get 'src' pad after it was added.\n");
-            }
-        
-
         g_free(pad_name);
+
+        gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER, (GstPadProbeCallback)extractRtpTimestampProbe, data, NULL);
     }
 
 
@@ -245,9 +245,19 @@ namespace tod_rtsp{
 
     gboolean RtspClients::on_gst_message(GstBus *bus, GstMessage *message, RtspStream *stream) {
         switch (GST_MESSAGE_TYPE(message)) {
-            case GST_MESSAGE_EOS:
-                RCLCPP_WARN(RtspClients::get_logger(), "End of stream reached for %s. If end not intended, restart vehicle and operator docker to continue.", stream->name.c_str());
-                break;
+            case GST_MESSAGE_EOS: {
+                RCLCPP_WARN(RtspClients::get_logger(), "End of stream reached for %s. If unintended, restart vehicle and operator docker.", stream->name.c_str());
+                GstElement *pipeline_to_free = nullptr;
+                {
+                    std::lock_guard<std::mutex> lock(stream->mutex);
+                    if (!stream->pipeline) return FALSE;  // disconnect_video_client already cleaned up
+                    pipeline_to_free = stream->pipeline;
+                    stream->pipeline = nullptr;
+                }
+                gst_element_set_state(pipeline_to_free, GST_STATE_NULL);
+                gst_object_unref(pipeline_to_free);
+                return FALSE;  // removes this bus watch
+            }
             default:
                 break;
         }
@@ -302,151 +312,194 @@ namespace tod_rtsp{
 
         // Parse the appropriate pipeline based on the stream type (H264 or JPEG)
         GError *error{NULL};
+        GstElement *new_pipeline = nullptr;
         if (stream->isJpeg)
-            stream->pipeline = gst_parse_launch(pipe_desc_jpeg, &error);
+            new_pipeline = gst_parse_launch(pipe_desc_jpeg, &error);
         else
-            stream->pipeline = gst_parse_launch(pipe_desc_h264, &error);
-
-        // Check for errors in pipeline parsing
-        if (error) {
-            RCLCPP_ERROR(this->get_logger(), "%s: Something went wrong parsing launch string - Abort!", _nn.c_str());
-            return;
-        }
+            new_pipeline = gst_parse_launch(pipe_desc_h264, &error);
 
         // Free the pipeline description strings
         g_free(pipe_desc_h264);
         g_free(pipe_desc_jpeg);
 
+        // Check for errors in pipeline parsing
+        if (error) {
+            RCLCPP_ERROR(this->get_logger(), "%s: Something went wrong parsing launch string - Abort!", _nn.c_str());
+            g_error_free(error);
+            if (new_pipeline) {
+                gst_object_unref(new_pipeline);
+            }
+            return;
+        }
+
         // Get the identity element from the pipeline
-        GstElement *theIdentity = gst_bin_get_by_name(GST_BIN(stream->pipeline), "myIdentity");
+        GstElement *theIdentity = gst_bin_get_by_name(GST_BIN(new_pipeline), "myIdentity");
         if (!theIdentity) {
             RCLCPP_ERROR(this->get_logger(), "%s: Could not get identity element from pipeline - Abort!", _nn.c_str());
+            gst_object_unref(new_pipeline);
             return;
         }
         // Connect the identity element's handoff signal to the callback
         g_signal_connect(theIdentity, "handoff", G_CALLBACK(new_rtp_packet), stream.get());
+        gst_object_unref(theIdentity);
 
         // Get the appsink element from the pipeline
-        GstElement *theAppSink = gst_bin_get_by_name(GST_BIN(stream->pipeline), "mySink");
+        GstElement *theAppSink = gst_bin_get_by_name(GST_BIN(new_pipeline), "mySink");
         if (!theAppSink) {
             RCLCPP_ERROR(this->get_logger(), "%s: Could not get appsink from pipeline - Abort!", _nn.c_str());
+            gst_object_unref(new_pipeline);
             return;
         }
         // Connect the appsink element's new-sample signal to the callback
         g_signal_connect(theAppSink, "new-sample", G_CALLBACK(new_image_sample), stream.get());
+        gst_object_unref(theAppSink);
+
+        // Connect pad-added BEFORE PLAYING to avoid race: rtspsrc creates dynamic pads
+        // during state transition, and the signal must be connected beforehand
+        GstElement *rtpsrc = findRtspsrcElement(new_pipeline);
+        if (rtpsrc) {
+            g_signal_connect(rtpsrc, "pad-added", G_CALLBACK(onPadAdded), stream.get());
+            gst_object_unref(rtpsrc);
+        }
 
         // Log the successful start of the stream
         RCLCPP_INFO(this->get_logger(), "%s: Started streaming %s from uri %s", _nn.c_str(), stream->name.c_str(), uri.c_str());
 
-        // Set the pipeline to the PLAYING state
-        gst_element_set_state(stream->pipeline, GST_STATE_PLAYING);
-
-        // Find the rtspsrc element in the pipeline
-        GstElement *rtpsrc = findRtspsrcElement(stream->pipeline);
-
-        if (rtpsrc) {
-            // Connect the pad-added signal of the rtspsrc element to the callback
-            g_signal_connect(rtpsrc, "pad-added", G_CALLBACK(onPadAdded), stream.get());
+        // Assign under lock so on_gst_message (GLib thread) sees a consistent value
+        {
+            std::lock_guard<std::mutex> lock(stream->mutex);
+            stream->pipeline = new_pipeline;
         }
 
+        // Set the pipeline to the PLAYING state
+        gst_element_set_state(new_pipeline, GST_STATE_PLAYING);
+
         // Add a message watch to the bus for handling GStreamer messages
-        GstBus *bus = gst_element_get_bus(stream->pipeline);
+        GstBus *bus = gst_element_get_bus(new_pipeline);
         gst_bus_add_watch(bus, (GstBusFunc)on_gst_message, stream.get());
+        gst_object_unref(bus);
     }
 
 
-    void RtspClients::disconnect_video_client(std::shared_ptr<RtspStream> stream) 
+    void RtspClients::disconnect_video_client(std::shared_ptr<RtspStream> stream)
     {
-        gst_element_send_event(stream->pipeline, gst_event_new_eos());
-        gst_element_set_state(stream->pipeline, GST_STATE_NULL);
-        gst_object_unref(stream->pipeline);
+        GstElement *pipeline_to_free = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(stream->mutex);
+            if (!stream->pipeline) return;
+            pipeline_to_free = stream->pipeline;
+            stream->pipeline = nullptr;  // null under lock so on_gst_message sees nullptr
+        }
+        // GStreamer state changes outside lock — avoids deadlock if GLib loop calls on_gst_message
+        gst_element_send_event(pipeline_to_free, gst_event_new_eos());
+        gst_element_set_state(pipeline_to_free, GST_STATE_NULL);
+        gst_object_unref(pipeline_to_free);
         RCLCPP_INFO(this->get_logger(), "%s: Stopped streaming %s", _nn.c_str(), stream->name.c_str());
     }
 
-    void RtspClients::new_rtp_packet(GstElement *identity, GstBuffer *buffer, RtspStream *stream) 
+    void RtspClients::new_rtp_packet(GstElement *identity, GstBuffer *buffer, RtspStream *stream)
     {
-        if(stream->camera->timestamp < stream->lastTimestamp){ 
-            std::lock_guard<std::mutex> lock(stream->mutex);
-            RCLCPP_DEBUG(RtspClients::get_logger(), "%s: new rtp Package sent", stream->name.c_str());
-            // store and publish packet info
-            tod_network_msgs::msg::PaketInfo pktInfoMsg;
-            
-            auto time = std::chrono::system_clock::now();
+        bool should_process;
+        {
+            std::lock_guard<std::mutex> ts_lock(stream->camera->timestampMutex);
+            should_process = (stream->camera->timestamp < stream->lastTimestamp);
+        }
+        if (!should_process) return;
 
-            std::chrono::seconds sec = std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch());
-            std::chrono::nanoseconds nanosec = std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch());
+        RCLCPP_DEBUG(RtspClients::get_logger(), "%s: new rtp Package sent", stream->name.c_str());
 
-            pktInfoMsg.header.stamp.sec = (int32_t)sec.count();
-            pktInfoMsg.header.stamp.nanosec = (int32_t)(nanosec.count() % 1000000000);
-            
-            pktInfoMsg.size_bit = int32_t(8 * gst_buffer_peek_memory(buffer, 0)->size);
-            gst_rtp_buffer_map(buffer, GST_MAP_READ, &stream->rtpPaket);
+        tod_network_msgs::msg::PaketInfo pktInfoMsg;
+        auto time = std::chrono::system_clock::now();
+        std::chrono::seconds sec = std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch());
+        std::chrono::nanoseconds nanosec = std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch());
+        pktInfoMsg.header.stamp.sec = (int32_t)sec.count();
+        pktInfoMsg.header.stamp.nanosec = (int32_t)(nanosec.count() % 1000000000);
+
+        GstMemory *peekMem = gst_buffer_peek_memory(buffer, 0);
+        if (!peekMem) {
+            RCLCPP_ERROR(RtspClients::get_logger(), "%s: no memory block in RTP buffer", stream->name.c_str());
+            return;
+        }
+        pktInfoMsg.size_bit = int32_t(8 * peekMem->size);
+
+        if (gst_rtp_buffer_map(buffer, GST_MAP_READ, &stream->rtpPaket)) {
             pktInfoMsg.seq_num = gst_rtp_buffer_get_seq(&stream->rtpPaket);
             gst_rtp_buffer_unmap(&stream->rtpPaket);
-            stream->pubPaketInfo->publish(pktInfoMsg);
+        }
 
+        // Accumulate stats under lock, publish outside to avoid holding mutex during ROS publish
+        {
+            std::lock_guard<std::mutex> lock(stream->mutex);
             ++stream->rtpPaketCount;
             stream->pktSizeSum_bit += pktInfoMsg.size_bit;
         }
+        stream->pubPaketInfo->publish(pktInfoMsg);
     }
 
-    void RtspClients::new_image_sample(GstAppSink* appSink, RtspStream* stream) 
+    GstFlowReturn RtspClients::new_image_sample(GstAppSink* appSink, RtspStream* stream)
     {
-        // RCLCPP_ERROR(stream->get_logger(), "Entering newImageSample for stream %s", stream->name.c_str());
         GstSample* sample = gst_app_sink_pull_sample(appSink);
         if (!sample) {
             RCLCPP_ERROR(stream->get_logger(), "No sample received from GStreamer pipeline.");
-            return;
+            return GST_FLOW_ERROR;
         }
         GstCaps* caps = gst_sample_get_caps(sample);
         if (!caps) {
             RCLCPP_ERROR(RtspClients::get_logger(), "%s Client: could not get image info from filter caps", stream->name.c_str());
-            return;
+            gst_sample_unref(sample);
+            return GST_FLOW_ERROR;
         }
         GstStructure* s = gst_caps_get_structure(caps, 0);
         int width{0}, height{0};
         if (!(gst_structure_get_int(s, "width", &width)
             && gst_structure_get_int(s, "height", &height))) {
             RCLCPP_ERROR(RtspClients::get_logger(), "%s Client: Could not get image width and height from filter caps", stream->name.c_str());
-            return;
+            gst_sample_unref(sample);
+            return GST_FLOW_ERROR;
         }
-        GstBuffer* buffer = gst_sample_get_buffer(sample);    
+        if (width == 0 || height == 0) {
+            RCLCPP_ERROR(RtspClients::get_logger(), "%s Client: zero dimension in caps (%dx%d)", stream->name.c_str(), width, height);
+            gst_sample_unref(sample);
+            return GST_FLOW_ERROR;
+        }
+        GstBuffer* buffer = gst_sample_get_buffer(sample);
         GstMemory* mem = gst_buffer_get_all_memory(buffer);
+        if (!mem) {
+            RCLCPP_ERROR(RtspClients::get_logger(), "%s: buffer has no memory blocks", stream->name.c_str());
+            gst_sample_unref(sample);
+            return GST_FLOW_ERROR;
+        }
         GstMapInfo info;
         if (gst_memory_map(mem, &info, GST_MAP_READ)) {
             sensor_msgs::msg::Image::SharedPtr new_image_msg = std::make_shared<sensor_msgs::msg::Image>();
-            if (buffer) {
-                std::lock_guard lock(stream->camera->timestampMutex);           
-                if(stream->camera->timestamp < stream->lastTimestamp){ 
-                    new_image_msg->header.stamp = stream->lastTimestamp;
+            {
+                std::lock_guard lock(stream->camera->timestampMutex);
+                bool no_timestamp = (stream->lastTimestamp == rclcpp::Time(0, 0, RCL_SYSTEM_TIME));
+                if (no_timestamp || stream->camera->timestamp < stream->lastTimestamp) {
+                    rclcpp::Time stamp = no_timestamp ? rclcpp::Clock(RCL_SYSTEM_TIME).now() : stream->lastTimestamp;
+                    new_image_msg->header.stamp = stamp;
                     new_image_msg->data = std::vector<u_char>(info.data, info.data + info.size);
                     new_image_msg->width = width;
                     new_image_msg->height = height;
                     new_image_msg->step = uint(info.size / height);
                     new_image_msg->encoding = stream->imageOutputFormat;
-                    stream->imgHeight_px = height;
-                    stream->imgWidth_px = width;
                     stream->pubImage->publish(*new_image_msg);
-                    
-                    // RCLCPP_ERROR(stream->get_logger(), 
-                    //                     "New Image arrived %s at time: %.3f seconds. Last Stamp: %.3f", 
-                    //                     stream->name.c_str(), 
-                    //                     stream->lastTimestamp.seconds(),
-                    //                     stream->camera->timestamp.seconds());
-                    stream->camera->timestamp = stream->lastTimestamp;                   
-
-                }else{
-                    //  RCLCPP_ERROR(stream->get_logger(), "Image was too late  %s at time: %.3f seconds. Last Stamp: %.3f", stream->name.c_str(), stream->lastTimestamp.seconds(),stream->camera->timestamp.seconds());
+                    stream->camera->timestamp = stamp;
                 }
-            }             
-            stream->imgHeight_px = height;
-            stream->imgWidth_px = width;
+            }
+            gst_memory_unmap(mem, &info);
+            {
+                std::lock_guard<std::mutex> lock(stream->mutex);
+                stream->imgHeight_px = height;
+                stream->imgWidth_px = width;
+            }
         }
-
-        gst_sample_unref(sample);
         gst_memory_unref(mem);
-        gst_memory_unmap(mem, &info);
-        std::lock_guard<std::mutex> lock(stream->mutex);
-        ++stream->frameCount; // used to publish current frame rate from ros main loop
+        gst_sample_unref(sample);
+        {
+            std::lock_guard<std::mutex> lock(stream->mutex);
+            ++stream->frameCount;
+        }
+        return GST_FLOW_OK;
     }
 } //namespace tod_rtsp

@@ -1,6 +1,6 @@
 launch_parameters:
-  vehicleID: 'edgar'        # For choices see ./vehicle_config
-  mode:      'only_sim'     # Choice of {vehicle, only_sim}
+  vehicleID: 'edgarautoware'  # For choices see ./vehicle_config
+  mode:      'vehicle'        # Choice of {vehicle, only_sim}
 
 packages_to_launch:         # Note: vehicle interface is loaded automatically 
   operator:                 # Packages that launch nodes on the operator side

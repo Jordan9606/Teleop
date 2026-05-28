@@ -3,6 +3,7 @@ project(tod_edgarautoware_interface)
 
 # Find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
@@ -69,6 +70,7 @@ ament_target_dependencies(SensingInterfaceNode
     autoware_auto_control_msgs
     tod_generic_interface
     tod_core
+    ament_index_cpp
 )
 
 # Add include directories

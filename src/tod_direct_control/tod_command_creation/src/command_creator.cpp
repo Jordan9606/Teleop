@@ -3,7 +3,9 @@
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
-tod_command_creation::CommandCreator::CommandCreator() : Node("CommandCreator"), _count(0)
+tod_command_creation::CommandCreator::CommandCreator() : Node("CommandCreator"), _count(0),
+    _prevVelocityTime(this->get_clock()->now()),
+    _prevSteeringTime(this->get_clock()->now())
 {
     _joystickSubs = this->create_subscription<sensor_msgs::msg::Joy>(
         "input/joystick", 
@@ -11,9 +13,14 @@ tod_command_creation::CommandCreator::CommandCreator() : Node("CommandCreator"),
         std::bind(&CommandCreator::callback_joystick_msg, this, _1));
     
     _statusSubs = this->create_subscription<tod_status_msgs::msg::Status>(
-        "input/operator_status", 
+        "input/operator_status",
         1,
         std::bind(&CommandCreator::callback_status_msg, this, _1));
+
+    _vehicleStateSubs = this->create_subscription<tod_vehicle_msgs::msg::PrimaryVehicleState>(
+        "input/primary_vehicle_state",
+        1,
+        std::bind(&CommandCreator::callback_vehicle_state, this, _1));
 
     _primaryControlPub = this->create_publisher<tod_vehicle_msgs::msg::PrimaryControlCmd>("output/primary_control_cmd", 1);
     _secondaryControlPub = this->create_publisher<tod_vehicle_msgs::msg::SecondaryControlCmd>("output/secondary_control_cmd", 1);
@@ -99,25 +106,38 @@ void tod_command_creation::CommandCreator::timer_callback()
     _joystickInputSet = false;
 }
 
-void tod_command_creation::CommandCreator::callback_joystick_msg(const sensor_msgs::msg::Joy &msg) 
+void tod_command_creation::CommandCreator::callback_joystick_msg(const sensor_msgs::msg::Joy &msg)
 {
-    
     if (_status == tod_status_msgs::msg::Status::TOD_STATUS_TELEOPERATION) {
-        calculate_steering_wheel_angle(_primaryControlMsg, msg.axes);
-        calculate_desired_velocity(_primaryControlMsg, msg, _secondaryControlMsg.gear_position);
-        set_gear(_secondaryControlMsg, msg.buttons, _primaryControlMsg.velocity);
-        set_indicator(_secondaryControlMsg, msg.buttons);
-        set_light(_secondaryControlMsg, msg.buttons);
-        set_honk(_secondaryControlMsg, msg.buttons);
-        _joystickInputSet = true;
+        try {
+            calculate_steering_wheel_angle(_primaryControlMsg, msg.axes);
+            calculate_desired_velocity(_primaryControlMsg, msg, _secondaryControlMsg.gear_position);
+            set_gear(_secondaryControlMsg, msg.buttons, msg.axes);
+            set_indicator(_secondaryControlMsg, msg.buttons);
+            set_light(_secondaryControlMsg, msg.buttons);
+            set_honk(_secondaryControlMsg, msg.buttons);
+            _joystickInputSet = true;
+        } catch (const std::out_of_range& e) {
+            RCLCPP_ERROR_ONCE(this->get_logger(), "Joystick message index out of range: %s — wrong device?", e.what());
+        }
     }
 }
 
-void tod_command_creation::CommandCreator::callback_status_msg(const tod_status_msgs::msg::Status &msg) 
+void tod_command_creation::CommandCreator::callback_vehicle_state(const tod_vehicle_msgs::msg::PrimaryVehicleState &msg)
+{
+    _actualVelocity = msg.velocity;
+}
+
+void tod_command_creation::CommandCreator::callback_status_msg(const tod_status_msgs::msg::Status &msg)
 {
     if (_status == tod_status_msgs::msg::Status::TOD_STATUS_TELEOPERATION
         && msg.tod_status != tod_status_msgs::msg::Status::TOD_STATUS_TELEOPERATION) {
         init_control_messages();
+    }
+    if (msg.tod_status == tod_status_msgs::msg::Status::TOD_STATUS_TELEOPERATION
+        && _status != tod_status_msgs::msg::Status::TOD_STATUS_TELEOPERATION) {
+        _prevVelocityTime = this->get_clock()->now();
+        _prevSteeringTime = this->get_clock()->now();
     }
 
     _status = msg.tod_status;
@@ -127,18 +147,18 @@ void tod_command_creation::CommandCreator::calculate_steering_wheel_angle(tod_ve
         const std::vector<float>& axes) 
 {
     
-    static rclcpp::Time tPrev;
     static double oldSetSWA{0.0};
     // calc desired SWA
     double newDesiredSWA = axes.at(joystick::AxesPos::STEERING) * vehicleParamHandler_->get_max_swa_rad();
 
     if (_constraintSteeringRate) { // constraint steering rate
-        static rclcpp::Duration dur = this->get_clock()->now() - tPrev;
+        rclcpp::Duration dur = this->get_clock()->now() - _prevSteeringTime;
+        if (dur.seconds() > 0.2) dur = rclcpp::Duration::from_seconds(0.2);
         double newSetSWA = std::min(newDesiredSWA, oldSetSWA + dur.seconds() * _maxSteeringWheelAngleRate);
         newSetSWA = std::max(newSetSWA, oldSetSWA - dur.seconds() * _maxSteeringWheelAngleRate);
         oldSetSWA = newSetSWA;
         out.steering_wheel_angle = newSetSWA;
-        tPrev = this->get_clock()->now();
+        _prevSteeringTime = this->get_clock()->now();
     } else { // output unconstraint SWA
         out.steering_wheel_angle = newDesiredSWA;
     }
@@ -156,7 +176,6 @@ void tod_command_creation::CommandCreator::calculate_desired_velocity(tod_vehicl
         return;
     }
 
-    static rclcpp::Time prevTime = this->get_clock()->now();
     float a_soll = 0;
     float changeOperator;
 
@@ -169,15 +188,19 @@ void tod_command_creation::CommandCreator::calculate_desired_velocity(tod_vehicl
 
     //Calculate Acceleration demand by operator
     static float deadzoneThrottle{0.05}, deadzoneBrake{0.05};
-    if (changeOperator >= 0) {
-        a_soll = _maxAcceleration * (std::max(changeOperator, (float) deadzoneThrottle) - deadzoneThrottle); //acc
+    static float coastDeceleration{0.5f};
+    if (changeOperator >= deadzoneThrottle) {
+        a_soll = _maxAcceleration * (changeOperator - deadzoneThrottle);
+    } else if (changeOperator <= -deadzoneBrake) {
+        a_soll = _maxDeceleration * (changeOperator + deadzoneBrake);
     } else {
-        a_soll = _maxDeceleration * (std::min(changeOperator, (float) -deadzoneBrake) + deadzoneBrake); // decelerate
+        a_soll = -coastDeceleration; // coast: slow down when pedals released
     }
 
     //Integrate Speed
-    rclcpp::Duration dt = this->get_clock()->now() - prevTime;
-    prevTime = this->get_clock()->now();
+    rclcpp::Duration dt = this->get_clock()->now() - _prevVelocityTime;
+    if (dt.seconds() > 0.2) dt = rclcpp::Duration::from_seconds(0.2);
+    _prevVelocityTime = this->get_clock()->now();
     out.velocity = out.velocity + dt.seconds() * a_soll;
 
     // Handle Speed Button Increase/Decrease
@@ -201,13 +224,12 @@ void tod_command_creation::CommandCreator::calculate_desired_velocity(tod_vehicl
     out.acceleration = a_soll;
 }
 
-void tod_command_creation::CommandCreator::set_gear(tod_vehicle_msgs::msg::SecondaryControlCmd &out, const std::vector<int> &buttonState,
-        const float &currentVelocity) 
+void tod_command_creation::CommandCreator::set_gear(tod_vehicle_msgs::msg::SecondaryControlCmd &out, const std::vector<int> &buttonState, const std::vector<float> &axes)
 {
     static int maxGear{4};
     static int minGear{0};
 
-    if (currentVelocity >= 0.01)
+    if (std::abs(_actualVelocity) >= 0.01f)
         return;
 
     // Increase Gear

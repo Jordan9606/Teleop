@@ -11,7 +11,7 @@ def generate_launch_description():
     - config_mode_arg: True to print axis and value info logs to the console if new input is recieved
     - debug_arg: True to print debug logs
     '''
-    config_file_name = 'virtual.yaml'
+    config_file_name = os.environ.get('TOD_INPUT_DEVICE_CONFIG', 'logitechg29.yaml')
     config_mode_arg  = DeclareLaunchArgument('ConfigMode', default_value = 'False')
     debug_arg        = DeclareLaunchArgument('debug', default_value = 'False')
 

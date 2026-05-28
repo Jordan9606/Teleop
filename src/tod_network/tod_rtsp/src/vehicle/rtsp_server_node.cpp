@@ -13,8 +13,7 @@
 int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
     auto server = std::make_shared<tod_rtsp::RtspServer>();
-    server->run();
-    rclcpp::spin(server);
+    server->run();  // blocks until rclcpp::ok() == false; spins internally
     rclcpp::shutdown();
     return 0;
 }

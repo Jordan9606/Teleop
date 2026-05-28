@@ -78,7 +78,7 @@ void VideoLayer<ImageComp>::on_update(float ts) {
     tod_gl::Entity subscription_manager = _active_scene->find_entity_with_tag("SubscriptionManager");
     if (subscription_manager.has_component<ImageComp>()) {
         const sensor_msgs::msg::Image &image = subscription_manager.get_component<ImageComp>().image;
-        
+
         if (!image.data.empty()) {
             width_ = image.width;
             height_ = image.height;

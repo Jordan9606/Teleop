@@ -71,7 +71,7 @@ bool RtspServer::set_bitrate_for_streams(int bitrate_sum) {
     bool success = true;
     for(auto cam : cameras_){
         for (auto stream : cam->_streams) {
-            stream->set_bitrate(new_bitrate);
+            success &= stream->set_bitrate(new_bitrate);
         }
     }
     return success;
@@ -181,8 +181,8 @@ void RtspServer::callback_video_reconfig(const std::shared_ptr<tod_config_msgs::
                 else RCLCPP_INFO(RtspServer::get_logger(), "Cropping and Scaling did not run successfully");
 
                 bool bitrate_success = stream->set_bitrate(request->bitrate);
-                if (bitrate_success) RCLCPP_INFO(RtspServer::get_logger(), "Failed to set bitate for %s", request->camera_name.c_str());
-                else RCLCPP_INFO(RtspServer::get_logger(), "Set bitrate successfully %s", message.c_str());
+                if (bitrate_success) RCLCPP_INFO(RtspServer::get_logger(), "Set bitrate successfully for %s", request->camera_name.c_str());
+                else RCLCPP_INFO(RtspServer::get_logger(), "Failed to set bitrate for %s", request->camera_name.c_str());
 
                 bool active_success = stream->update_activity(request->paused);
                 std::string scaling_factor_str = request->scaling_factor;
@@ -200,7 +200,7 @@ void RtspServer::callback_video_reconfig(const std::shared_ptr<tod_config_msgs::
 
                 RCLCPP_INFO(RtspServer::get_logger(), "%s stream %s successfully ", paused.c_str(),request->camera_name.c_str());
                 // evaluating general success. logic is: for one stream all configs must be set successfully. Also all streams must be set successfully
-                bool local_success = resize_success && bitrate_success & active_success;
+                bool local_success = resize_success && bitrate_success && active_success;
                 success = success && local_success;                    
             }
     }}

@@ -3,6 +3,7 @@ project(tod_rc-car_interface)
 
 # Find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
@@ -26,6 +27,7 @@ ament_target_dependencies(ActuationInterfaceNode
     ackermann_msgs
     tod_generic_interface
     tod_core
+    ament_index_cpp
 )
 
 # Add include directories
@@ -48,6 +50,7 @@ ament_target_dependencies(SensingInterfaceNode
     sensor_msgs
     nav_msgs
     tod_generic_interface
+    ament_index_cpp
 )
 
 # Add include directories

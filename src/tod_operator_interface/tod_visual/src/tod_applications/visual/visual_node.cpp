@@ -14,6 +14,7 @@
 #include "trajectory_guidance_state_layer.hpp"
 #include "ui_layer.hpp"
 #include "video_layer.hpp"
+#include "gear_switch_video_layer.hpp"
 #include "view_port_layer.hpp"
 #include "visual_io_layer.hpp"
 
@@ -54,9 +55,9 @@ class VisualApplicationNode : public tod_gl::SceneApplication {
                                        tod_gl::JoyStickComponent, 
                                        tod_gl::SecondaryControlCommandComponent>(_ros, _active_scene, view_port_layer));
 
-        push_overlay(new VideoLayer<tod_gl::ImageComponentFrontLeft>(_ros, _active_scene, ImGuiDir_Up, "Left"));
-        push_overlay(new VideoLayer<tod_gl::ImageComponentFrontCenter>(_ros, _active_scene, ImGuiDir_Up, "Center"));
-        push_overlay(new VideoLayer<tod_gl::ImageComponentFrontRight>(_ros, _active_scene, ImGuiDir_Up, "Right"));
+        push_overlay(new VideoLayer<tod_gl::ImageComponentRearLeft>(_ros, _active_scene, ImGuiDir_Up, "Left"));
+        push_overlay(new GearSwitchVideoLayer(_ros, _active_scene, ImGuiDir_Up, "Center"));
+        push_overlay(new VideoLayer<tod_gl::ImageComponentRearRight>(_ros, _active_scene, ImGuiDir_Up, "Right"));
 
         push_overlay(new TrajectoryGuidanceStateLayer<tod_gl::TrajectoryGuidanceStateComponent>(_ros, _active_scene, view_port_layer));
         // push_overlay(new SwitchCameraLayer<tod_gl::TrajectoryGuidanceStateComponent>(_ros, _active_scene, view_port_layer));

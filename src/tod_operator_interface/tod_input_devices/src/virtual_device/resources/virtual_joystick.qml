@@ -4,7 +4,7 @@ Rectangle {
     id: root
     width: joystick.width
     height: joystick.height
-    color: Qt.transparent
+    color: "transparent"
     signal userInput(double x, double y);
     
 

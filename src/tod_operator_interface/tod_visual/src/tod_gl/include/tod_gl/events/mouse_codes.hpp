@@ -6,10 +6,11 @@
 
 #pragma once
 
+#include <cstdint>
 #include <iostream>
 
 namespace tod_gl {
-typedef enum class MouseCode : uint16_t {
+enum class MouseCode : uint16_t {
     // From glfw3.h
     Button0 = 0,
     Button1 = 1,
@@ -24,7 +25,7 @@ typedef enum class MouseCode : uint16_t {
     ButtonLeft = Button0,
     ButtonRight = Button1,
     ButtonMiddle = Button2
-} Mouse;
+};
 
 inline std::ostream& operator<<(std::ostream& os, MouseCode mouseCode) {
     os << static_cast<int32_t>(mouseCode);

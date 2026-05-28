@@ -189,7 +189,7 @@ services:
     command: ros2 launch tod_launch tod_vehicle.launch.py
              mode:=${MODE:?}
              vehicleID:=${VEHICLE_ID:?}
-             vehicleNetworkInterface:=eth_opt_0
+             vehicleNetworkInterface:=${VEHICLE_NETWORK_IFACE:-eth_opt_0}
 
 
   ###################################################################################
@@ -223,24 +223,31 @@ services:
     volumes:
       # Display output
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - $XAUTHORITY:/root/.Xauthority
+      - $XAUTHORITY:/home/${DOCKER_USERNAME:?}/.Xauthority
       # Shared Memory
       - /dev/shm:/dev/shm
       # DDS config
       - ./config/dds:/home/${DOCKER_USERNAME:?}/wsp/config/dds:rw
       # Software config
       - ./config/config:/home/${DOCKER_USERNAME:?}/wsp/install/tod_launch/share/tod_launch/config:rw
+      # Input device: use logitechg29 as default instead of virtual keyboard
+      - ./src/tod_operator_interface/tod_input_devices/launch/tod_input_devices.launch.py:/home/${DOCKER_USERNAME:?}/wsp/install/tod_input_devices/share/tod_input_devices/launch/tod_input_devices.launch.py:ro
+      - ./src/tod_operator_interface/tod_input_devices/config/logitechg29.yaml:/home/${DOCKER_USERNAME:?}/wsp/install/tod_input_devices/share/tod_input_devices/config/logitechg29.yaml:ro
+      - ./src/tod_operator_interface/tod_input_devices/src/virtual_device/resources/virtual_joystick.qml:/home/${DOCKER_USERNAME:?}/wsp/install/tod_input_devices/lib/tod_input_devices/virtual_joystick.qml:ro
+    devices:
+      - /dev/input/js0:/dev/input/js0
     environment:
       # Display output
       - DISPLAY=$DISPLAY
       - XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
       - MESA_GL_VERSION_OVERRIDE=3.3
-      - XAUTHORITY=/run/user/1000/gdm/Xauthority
+      - XAUTHORITY=/home/${DOCKER_USERNAME:?}/.Xauthority
       - LOAD_PCAN_DRIVERS=true
-    privileged: true 
+      - TOD_INPUT_DEVICE_CONFIG=${TOD_INPUT_DEVICE_CONFIG:-virtual.yaml}
+    privileged: true
     command: ros2 launch tod_launch tod_operator.launch.py
              vehicleID:=${VEHICLE_ID:?}
-             operatorNetworkInterface:=tun0
+             operatorNetworkInterface:=${OPERATOR_NETWORK_IFACE:-tun0}
              
 
   ###################################################################################

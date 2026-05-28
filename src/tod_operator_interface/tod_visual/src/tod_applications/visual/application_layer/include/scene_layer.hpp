@@ -93,6 +93,7 @@ class VisualLayer : public tod_gl::SceneLayer {
     float _width = 1280;
     float _height = 720;
     float _time_step = 0.f;
+    bool _scene_ready{false};
 
     void handle_window_resize_event(tod_gl::WindowResizeEvent& e);
     void handle_mouse_moved_event(tod_gl::MouseMovedEvent& e);

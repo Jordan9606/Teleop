@@ -1,0 +1,14 @@
+# Tesla Model 3 approximate parameters as spawned in CARLA
+mass: 1845.0
+yaw_inertia: 2500.0
+distance_front_axle: 1.44
+distance_rear_axle: 1.44
+width_edge_to_edge: 2.10
+track_width: 1.85
+cornering_force_front: 80000.0
+cornering_force_rear: 80000.0
+maximum_road_wheel_angle: 0.74      # rad (~42 deg) - CARLA Tesla steer range
+maximum_steering_wheel_angle: 6.28  # rad (~360 deg per side) - G920 range
+height: 1.44
+distance_front_bumper: 2.88
+distance_rear_bumper: 2.88

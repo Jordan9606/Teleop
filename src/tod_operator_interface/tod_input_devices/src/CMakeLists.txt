@@ -30,7 +30,7 @@ set(GENERAL_CPP
 add_executable(InputDevice ${GENERAL_CPP})
 target_compile_features(InputDevice PRIVATE cxx_std_17)
 
-ament_target_dependencies(InputDevice ${${PROJECT_NAME}_EXPORTED_TARGETS} rclcpp tod_operator_msgs tod_status_msgs sensor_msgs)
+ament_target_dependencies(InputDevice ${${PROJECT_NAME}_EXPORTED_TARGETS} rclcpp tod_operator_msgs tod_status_msgs sensor_msgs ament_index_cpp)
 target_include_directories(InputDevice PRIVATE ${tod_operator_msgs_INCLUDE_DIRS})
 target_include_directories(InputDevice PRIVATE ${INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR} general )
 target_link_libraries(InputDevice Qt5::Widgets ${DEVICE_TARGETS} ${LIBS} stdc++fs)

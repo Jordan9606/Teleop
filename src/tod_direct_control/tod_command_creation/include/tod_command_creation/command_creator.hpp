@@ -13,6 +13,7 @@
 #include "tod_status_msgs/msg/status.hpp"
 #include "tod_vehicle_msgs/msg/primary_control_cmd.hpp"
 #include "tod_vehicle_msgs/msg/secondary_control_cmd.hpp"
+#include "tod_vehicle_msgs/msg/primary_vehicle_state.hpp"
 #include "tod_vehicle_msgs/VehicleEnums.h"
 #include "tod_operator_msgs/joystickConfig.h"
 #include <tod_helper/vehicle/Model.h>
@@ -48,6 +49,8 @@ private:
    
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr _joystickSubs;
     rclcpp::Subscription<tod_status_msgs::msg::Status>::SharedPtr _statusSubs;
+    rclcpp::Subscription<tod_vehicle_msgs::msg::PrimaryVehicleState>::SharedPtr _vehicleStateSubs;
+    float _actualVelocity{0.0f};
     rclcpp::Publisher<tod_vehicle_msgs::msg::PrimaryControlCmd>::SharedPtr _primaryControlPub;
     rclcpp::Publisher<tod_vehicle_msgs::msg::SecondaryControlCmd>::SharedPtr _secondaryControlPub;
     std::shared_ptr<rclcpp::ParameterEventHandler> _param_subscriber;
@@ -58,6 +61,9 @@ private:
     tod_vehicle_msgs::msg::PrimaryControlCmd _primaryControlMsg;     ///< Primary control message.
     tod_vehicle_msgs::msg::SecondaryControlCmd _secondaryControlMsg; ///< Secondary control message.
     std::unique_ptr<tod_core::param_set::Vehicle> vehicleParamHandler_;     ///< Vehicle parameter handler.
+
+    rclcpp::Time _prevVelocityTime;
+    rclcpp::Time _prevSteeringTime;
 
     bool _constraintSteeringRate{false};
     bool _invertSteeringInGearReverse{false};
@@ -87,6 +93,7 @@ private:
      * @param msg The received status message.
      */
     void callback_status_msg(const tod_status_msgs::msg::Status &msg);
+    void callback_vehicle_state(const tod_vehicle_msgs::msg::PrimaryVehicleState &msg);
 
     /**
      * @brief Calculates the desired steering wheel angle.
@@ -110,8 +117,7 @@ private:
      * @param buttonState The joystick button states.
      * @param currentVelocity The current vehicle velocity.
      */
-    void set_gear(tod_vehicle_msgs::msg::SecondaryControlCmd &out, const std::vector<int> &buttonState,
-            const float &currentVelocity);
+    void set_gear(tod_vehicle_msgs::msg::SecondaryControlCmd &out, const std::vector<int> &buttonState, const std::vector<float> &axes);
 
     /**
      * @brief Sets the indicator state based on joystick button states.

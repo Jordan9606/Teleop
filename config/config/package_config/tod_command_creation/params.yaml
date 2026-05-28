@@ -1,9 +1,8 @@
-edgar:
-  CommandCreator:
-    ros__parameters:
-      InvertSteeringInGearReverse:  true
-      ConstraintSteeringRate:       false
-      maxVelocity:                  10.0
-      maxAcceleration:              4.0
-      maxDeceleration:              9.0
-      maxSteeringWheelAngleRate:    7.6
+/**:
+  ros__parameters:
+    InvertSteeringInGearReverse:  false
+    ConstraintSteeringRate:       false
+    maxVelocity:                  10.0
+    maxAcceleration:              4.0
+    maxDeceleration:              9.0
+    maxSteeringWheelAngleRate:    7.6

@@ -1,4 +1,11 @@
 ## tod_vehicle_interface ##
+tod_carla_interface:
+  # vehicle - stub package; bridging is done by the carla-bridge service
+  - from: /vehicle/interface/actuation/to_actuation/primary_control_cmd
+    to: /vehicle/safety/output/primary_control_cmd
+  - from: /vehicle/interface/actuation/to_actuation/secondary_control_cmd
+    to: /vehicle/safety/output/secondary_control_cmd
+
 tod_edgar_interface:
   # vehicle
   - from: /vehicle/interface/actuation/to_actuation/primary_control_cmd
@@ -239,6 +246,8 @@ tod_command_creation:
     to: /operator/statemachine/output/operator_status
   - from: /operator/direct_control/input/joystick
     to: /operator/input_devices/output/joystick
+  - from: /operator/direct_control/input/primary_vehicle_state
+    to: /operator/network/data/from_vehicle/primary_vehicle_state
   - from: /operator/direct_control/output/primary_control_cmd
     to: /operator/network/data/to_vehicle/primary_control_cmd
   - from: /operator/direct_control/output/secondary_control_cmd

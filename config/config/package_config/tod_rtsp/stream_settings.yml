@@ -4,9 +4,9 @@ encoders:
     speedPreset: ultrafast
     slicedThreads: true  
     byteStream: true
-    intraRefresh: true
+    intraRefresh: false
     threads: 1
-    keyIntMax: 15
+    keyIntMax: 10
     nvidiaBased: false
 
     # ... h264 specific settings

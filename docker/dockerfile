@@ -10,6 +10,8 @@ ARG DOCKER_UID
 ARG DOCKER_GID
 
 ###--- Create an non-root dev user ---------------------------------------------###
+# Ubuntu 24.04 base image ships a default 'ubuntu' user with UID/GID 1000 — remove it first
+RUN userdel -r ubuntu 2>/dev/null || true
 RUN groupadd --gid ${DOCKER_GID} ${DOCKER_USERNAME} \
     && useradd -s /bin/bash --uid ${DOCKER_UID} --gid ${DOCKER_GID} -m ${DOCKER_USERNAME} \
     && echo ${DOCKER_USERNAME} ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/${DOCKER_USERNAME}\
@@ -163,6 +165,7 @@ USER ${DOCKER_USERNAME}
 WORKDIR /home/${DOCKER_USERNAME}/wsp
 RUN --mount=type=bind,source=src,target=/home/${DOCKER_USERNAME}/wsp/src \
     rosdep update \
+    && sudo apt-get update \
     && rosdep install --from-paths src --ignore-src --rosdistro ${ROS_DISTRO} -y
 
 ###--- Source entrypoint -------------------------------------------------------###
@@ -189,6 +192,7 @@ RUN --mount=type=bind,source=src,target=/home/${DOCKER_USERNAME}/wsp/src \
 FROM tod_operator_base AS tod_operator_builder
 
 ARG OPERATOR_BUILD_ARGS
+ARG CACHEBUST=1
 
 ###--- Build colcon workspace --------------------------------------------------###
 WORKDIR /home/${DOCKER_USERNAME}/wsp
@@ -219,7 +223,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ###--- Install Clang Tool apt packages for development -------------------------###
 RUN wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc \
-    && add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" \
+    && add-apt-repository "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-18 main" \
     && apt-get update \
     && apt-get install -y \
         clang-18 \

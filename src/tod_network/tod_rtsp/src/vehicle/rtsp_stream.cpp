@@ -89,8 +89,13 @@ void RtspStream::refresh(GstRTSPMountPoints *gstMounts){
 }
 
 void RtspStream::reset(){
+    if (!this->videocrop_ || !this->scalingFilter_) return;
     g_object_set(G_OBJECT(this->videocrop_), "top", 0, "bottom", 0, "left", 0, "right", 0, nullptr);
-    g_object_set(G_OBJECT(this->scalingFilter_), "caps", gst_caps_new_simple("video/x-raw", "width", G_TYPE_INT,this->video_config_->width , "height", G_TYPE_INT, this->video_config_->height , nullptr, nullptr));                
+    GstCaps *caps = gst_caps_new_simple("video/x-raw",
+        "width", G_TYPE_INT, this->video_config_->width,
+        "height", G_TYPE_INT, this->video_config_->height, nullptr);
+    g_object_set(G_OBJECT(this->scalingFilter_), "caps", caps, nullptr);
+    gst_caps_unref(caps);
 }
 
 
@@ -157,6 +162,11 @@ bool RtspStream::update_config(videoConfig config){
 
     // final scaling - round to integer and even pixel numbers multiple of 8
     std::string scalingStr = config.scaling_factor;
+    if (scalingStr.size() < 2) {
+        RCLCPP_ERROR(*this->logger_, "Invalid scaling_factor '%s' for %s — must be at least 2 chars",
+                     scalingStr.c_str(), this->name_.c_str());
+        return false;
+    }
     // scaling[1] is 'p' in new_config, replace with '.' to cast as double
     scalingStr.at(1) = '.';
     const double scalingFactor = std::stod(scalingStr);
@@ -173,12 +183,11 @@ bool RtspStream::update_config(videoConfig config){
                     "right", rightCrop, 
             nullptr);        
 
-        g_object_set(G_OBJECT(this->scalingFilter_), "caps", 
-            gst_caps_new_simple("video/x-raw", 
-                    "width", G_TYPE_INT, actual_width, 
-                    "height", G_TYPE_INT, actual_height, nullptr
-                )
-            , nullptr);
+        GstCaps *new_caps = gst_caps_new_simple("video/x-raw",
+            "width", G_TYPE_INT, actual_width,
+            "height", G_TYPE_INT, actual_height, nullptr);
+        g_object_set(G_OBJECT(this->scalingFilter_), "caps", new_caps, nullptr);
+        gst_caps_unref(new_caps);
 
         RCLCPP_INFO(*this->logger_, "set (aw,ah,w,h,ow,oh) = (%d,%d,%d,%d,%d,%d) at scaling factor = %f for %s", 
                 actual_width, actual_height, config.width, config.height, config.offset_width, config.offset_height, scalingFactor, this->name_.c_str());
@@ -200,58 +209,115 @@ bool RtspStream::update_activity(bool paused){
 
 void RtspStream::gst_media_configure(GstRTSPMediaFactory *factory, GstRTSPMedia *media){
     GstElement *element = gst_rtsp_media_get_element(media);
-    this->encoder_ = gst_bin_get_by_name_recurse_up(GST_BIN(element), "myenc");
-    g_object_set(G_OBJECT(this->encoder_), "bitrate", this->pipeline_config_.bitrate, nullptr);
-    this->videocrop_ = gst_bin_get_by_name_recurse_up(GST_BIN(element), "mycrop");
-    g_object_set(G_OBJECT(this->videocrop_), "top", 0, "bottom", 0, "left", 0, "right", 0, nullptr);
-    this->scalingFilter_ = gst_bin_get_by_name_recurse_up(GST_BIN(element), "myscale");
-    g_object_set(G_OBJECT(this->scalingFilter_), "caps", gst_caps_new_simple("video/x-raw", 
-            "width", G_TYPE_INT, this->video_config_->width, 
-            "height", G_TYPE_INT, this->video_config_->height, nullptr), 
-        nullptr);
 
-    // can be used for debugging purpose
-    // gives you a .dot file in the environment-variable defined beforhand: export GST_DEBUG_DUMP_DOT_DIR=/path/to/your/dictionary
-    // gst_debug_bin_to_dot_file(GST_BIN(element), GST_DEBUG_GRAPH_SHOW_ALL, "pipeline");
+    this->encoder_ = gst_bin_get_by_name_recurse_up(GST_BIN(element), "myenc");
+    if (!this->encoder_) {
+        RCLCPP_ERROR(*this->logger_, "Pipeline element 'myenc' not found for %s", this->name_.c_str());
+        gst_object_unref(element);
+        return;
+    }
+    g_object_set(G_OBJECT(this->encoder_), "bitrate", this->pipeline_config_.bitrate, nullptr);
+
+    this->videocrop_ = gst_bin_get_by_name_recurse_up(GST_BIN(element), "mycrop");
+    if (!this->videocrop_) {
+        RCLCPP_ERROR(*this->logger_, "Pipeline element 'mycrop' not found for %s", this->name_.c_str());
+        gst_object_unref(this->encoder_); this->encoder_ = nullptr;
+        gst_object_unref(element);
+        return;
+    }
+    g_object_set(G_OBJECT(this->videocrop_), "top", 0, "bottom", 0, "left", 0, "right", 0, nullptr);
+
+    this->scalingFilter_ = gst_bin_get_by_name_recurse_up(GST_BIN(element), "myscale");
+    if (!this->scalingFilter_) {
+        RCLCPP_ERROR(*this->logger_, "Pipeline element 'myscale' not found for %s", this->name_.c_str());
+        gst_object_unref(this->encoder_); this->encoder_ = nullptr;
+        gst_object_unref(this->videocrop_); this->videocrop_ = nullptr;
+        gst_object_unref(element);
+        return;
+    }
+    {
+        GstCaps *caps = gst_caps_new_simple("video/x-raw",
+            "width", G_TYPE_INT, this->video_config_->width,
+            "height", G_TYPE_INT, this->video_config_->height, nullptr);
+        g_object_set(G_OBJECT(this->scalingFilter_), "caps", caps, nullptr);
+        gst_caps_unref(caps);
+    }
 
     // select image format as received in ros image callback
     std::string format = get_gst_encoding(this->latest_image_->encoding);
 
     this->appsrc_ = gst_bin_get_by_name_recurse_up(GST_BIN(element), "mysrc");
-    g_object_set(G_OBJECT(this->appsrc_),
-                 "stream-type", GST_APP_STREAM_TYPE_STREAM,
-                 "format", GST_FORMAT_TIME,
-                 "is-live", TRUE,
-                 "do-timestamp", TRUE,
-                 "caps", gst_caps_new_simple("video/x-raw", 
-                        "format", G_TYPE_STRING, format.c_str(), 
-                        "width", G_TYPE_INT, this->video_config_->width, 
-                        "height", G_TYPE_INT, this->video_config_->height, nullptr), nullptr);
+    if (!this->appsrc_) {
+        RCLCPP_ERROR(*this->logger_, "Pipeline element 'mysrc' not found for %s", this->name_.c_str());
+        gst_object_unref(this->encoder_); this->encoder_ = nullptr;
+        gst_object_unref(this->videocrop_); this->videocrop_ = nullptr;
+        gst_object_unref(this->scalingFilter_); this->scalingFilter_ = nullptr;
+        gst_object_unref(element);
+        return;
+    }
+    {
+        GstCaps *caps = gst_caps_new_simple("video/x-raw",
+            "format", G_TYPE_STRING, format.c_str(),
+            "width", G_TYPE_INT, this->video_config_->width,
+            "height", G_TYPE_INT, this->video_config_->height, nullptr);
+        g_object_set(G_OBJECT(this->appsrc_),
+                     "stream-type", GST_APP_STREAM_TYPE_STREAM,
+                     "format", GST_FORMAT_TIME,
+                     "is-live", TRUE,
+                     "do-timestamp", TRUE,
+                     "caps", caps, nullptr);
+        gst_caps_unref(caps);
+    }
 
     // install the callback that will be called when a buffer is needed
     g_signal_connect(this->appsrc_, "need-data", (GCallback)static_gst_need_data, this);
 
     GstElement *rtph264pay = gst_bin_get_by_name(GST_BIN(element), "pay0");
     if (!rtph264pay) {
-        g_print("Error: rtph264pay element 'pay0' not found in the pipeline.\n");
+        RCLCPP_ERROR(*this->logger_, "Pipeline element 'pay0' not found for %s", this->name_.c_str());
+        gst_object_unref(this->appsrc_); this->appsrc_ = nullptr;
+        gst_object_unref(this->encoder_); this->encoder_ = nullptr;
+        gst_object_unref(this->videocrop_); this->videocrop_ = nullptr;
+        gst_object_unref(this->scalingFilter_); this->scalingFilter_ = nullptr;
+        gst_object_unref(element);
         return;
     }
     GstPad *src_pad = gst_element_get_static_pad(rtph264pay, "src");
     if (!src_pad) {
-        g_print("Error: 'src' pad not found in rtph264pay element.\n");
-        gst_object_unref(rtph264pay);  //TODO:Stelle sicher, dass das Element freigegeben wird, wenn der Pad nicht existiert
-    }   else{
-        gst_pad_add_probe(src_pad, GST_PAD_PROBE_TYPE_BUFFER, (GstPadProbeCallback)add_rtp_timestamp_probe, &this->gst_last_request_, nullptr);
+        RCLCPP_ERROR(*this->logger_, "'src' pad not found in pay0 for %s", this->name_.c_str());
+        gst_object_unref(rtph264pay);
+    } else {
+        gst_pad_add_probe(src_pad, GST_PAD_PROBE_TYPE_BUFFER, (GstPadProbeCallback)add_rtp_timestamp_probe, this, nullptr);
         gst_object_unref(src_pad);
+        gst_object_unref(rtph264pay);
     }
 
     gst_object_unref(this->appsrc_);
     gst_object_unref(this->encoder_);
+    gst_object_unref(this->videocrop_);
+    gst_object_unref(this->scalingFilter_);
     gst_object_unref(element);
+
+    g_signal_connect(media, "unprepared", (GCallback)static_on_unprepared, this);
 
     std::lock_guard lock(this->mutex_);
     this->is_active_ = true;
     RCLCPP_INFO(*this->logger_, "Client connected for %s in GStreamer image format %s", this->name_.c_str(), format.c_str());
+}
+
+void RtspStream::on_unprepared(GstRTSPMedia */*media*/) {
+    std::lock_guard lock(this->mutex_);
+    // Pipeline is being torn down — null element pointers so push_data/reset don't access freed memory
+    this->appsrc_ = nullptr;
+    this->encoder_ = nullptr;
+    this->videocrop_ = nullptr;
+    this->scalingFilter_ = nullptr;
+    this->gst_data_request_ = false;
+    this->is_active_ = false;
+}
+
+void RtspStream::static_on_unprepared(GstRTSPMedia *media, RtspStream *stream) {
+    stream->on_unprepared(media);
 }
 
 void RtspStream::static_gst_media_configure(GstRTSPMediaFactory *factory, GstRTSPMedia *media, RtspStream *stream){
@@ -264,6 +330,9 @@ void RtspStream::gst_need_data(GstElement *appsrc_, guint unused){
     this->gst_last_request_ = std::chrono::system_clock::time_point(
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds(this->latest_image_->header.stamp.sec)) \
         + std::chrono::nanoseconds(this->latest_image_->header.stamp.nanosec));
+    this->gst_last_request_ns_.store(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            this->gst_last_request_.time_since_epoch()).count());
     if (!this->is_active_)
     {
         RCLCPP_INFO(*this->logger_, "Stream %s is playing", this->name_.c_str());
@@ -277,11 +346,13 @@ void RtspStream::static_gst_need_data(GstElement *appsrc_, guint unused, RtspStr
 
 void RtspStream::push_data(){
     std::lock_guard lock(this->mutex_);
+    if (!this->appsrc_) return;
+    if (this->latest_image_->data.empty()) return;
     // put image data to buffer and push to pipeline
     GstBuffer *buffer = gst_buffer_new_wrapped_full(
         (GstMemoryFlags)0, (gpointer)&(this->latest_image_->data).at(0),
-        this->latest_image_->width * this->latest_image_->step, // size of image in Byte
-        0, this->latest_image_->width * this->latest_image_->step, nullptr, nullptr);
+        this->latest_image_->data.size(),
+        0, this->latest_image_->data.size(), nullptr, nullptr);
     GstFlowReturn ret;
     try{
         g_signal_emit_by_name(this->appsrc_, "push-buffer", buffer, &ret);
@@ -298,34 +369,27 @@ void RtspStream::static_push_data(RtspStream *stream){
 }
 
 bool RtspStream::is_inactive(){
-    bool timeout = std::chrono::system_clock::now() >= 
-        (this->gst_last_request_ + std::chrono::duration<double>(inactivity_timeout_));
+    auto last_req = std::chrono::system_clock::time_point(
+        std::chrono::nanoseconds(this->gst_last_request_ns_.load()));
+    bool timeout = std::chrono::system_clock::now() >=
+        (last_req + std::chrono::duration<double>(inactivity_timeout_));
     return timeout && this->is_active_;
 }
 
-GstPadProbeReturn RtspStream::add_rtp_timestamp_probe(GstPad *pad, GstPadProbeInfo *info,  gpointer user_data) {
-    auto* timestamp = static_cast<std::chrono::time_point<std::chrono::system_clock>*>(user_data);
+GstPadProbeReturn RtspStream::add_rtp_timestamp_probe(GstPad *pad, GstPadProbeInfo *info, gpointer user_data) {
+    auto* stream = static_cast<RtspStream*>(user_data);
     GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER(info);
     if (buffer && (info->type & GST_PAD_PROBE_TYPE_BUFFER)) {
         GstRTPBuffer rtp_buffer = GST_RTP_BUFFER_INIT;
-        if (gst_rtp_buffer_map(buffer, GST_MAP_READWRITE, &rtp_buffer)) {       
-            guint8 ext_id = 1;  // Extension ID between 1 and 14
-            guint8 appbits = 1;  // application specific bits (3 bits)
-            uint64_t timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                        timestamp->time_since_epoch())
-                                        .count();   
-            guint64 custom_timestamp = static_cast<guint64>(timestamp_ns);
-            if(custom_timestamp){
-            //g_print("Custom timestamp: %u ms\n", custom_timestamp);
-            // Übergabe des Timestamps als Datenzeiger
+        if (gst_rtp_buffer_map(buffer, GST_MAP_READWRITE, &rtp_buffer)) {
+            guint8 ext_id = 1;
+            guint8 appbits = 1;
+            guint64 custom_timestamp = static_cast<guint64>(stream->gst_last_request_ns_.load());
+            if (custom_timestamp) {
                 gboolean success = gst_rtp_buffer_add_extension_twobytes_header(
-                    &rtp_buffer,
-                    appbits,
-                    ext_id,
-                    &custom_timestamp,
-                    sizeof(custom_timestamp));  
+                    &rtp_buffer, appbits, ext_id,
+                    &custom_timestamp, sizeof(custom_timestamp));
                 if (!success) g_warning("Failed to add RTP header extension.");
-            
             }
             gst_rtp_buffer_unmap(&rtp_buffer);
         }

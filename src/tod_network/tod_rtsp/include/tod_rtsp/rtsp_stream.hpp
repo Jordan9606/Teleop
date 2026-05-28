@@ -94,9 +94,12 @@ private:
     std::atomic<bool> ros2_new_data_;
     std::atomic<bool> is_active_;
     std::chrono::time_point<std::chrono::system_clock> gst_last_request_;
+    std::atomic<int64_t> gst_last_request_ns_{0}; ///< nanoseconds of gst_last_request_ for lock-free probe access
 
     void gst_media_configure(GstRTSPMediaFactory *factory, GstRTSPMedia *media);
     static void static_gst_media_configure(GstRTSPMediaFactory *factory, GstRTSPMedia *media, RtspStream *stream);
+    void on_unprepared(GstRTSPMedia *media);
+    static void static_on_unprepared(GstRTSPMedia *media, RtspStream *stream);
     void gst_need_data(GstElement *appSrc, guint unused);
     //forwards the call to this class
     static void static_gst_need_data(GstElement* appSrc, guint unused, RtspStream* stream);

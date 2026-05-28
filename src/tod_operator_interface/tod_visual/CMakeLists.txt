@@ -24,6 +24,7 @@ endif()
 
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 
 option(OPERATOR "Build operator targets" ON)
 if (${OPERATOR})

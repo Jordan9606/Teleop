@@ -8,7 +8,7 @@
  #pragma once
 
  #include "tod_gl/utils/utils.hpp"
- #include <cv_bridge/cv_bridge.h>
+ #include <cv_bridge/cv_bridge.hpp>
  #include <glm/glm.hpp>
  #include <opencv2/opencv.hpp>
  #include <rclcpp/rclcpp.hpp>

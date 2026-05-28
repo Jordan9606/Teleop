@@ -3,5 +3,9 @@
     <Domain id="any">
         <General>
         </General>
+        <Discovery>
+            <ParticipantIndex>auto</ParticipantIndex>
+            <MaxAutoParticipantIndex>200</MaxAutoParticipantIndex>
+        </Discovery>
     </Domain>
 </CycloneDDS>

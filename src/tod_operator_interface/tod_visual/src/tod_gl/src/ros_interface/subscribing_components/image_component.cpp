@@ -8,7 +8,7 @@
  #include "tod_gl/ros_interface/subscribing_components/image_component.hpp"
  #include <iostream>
  #include <sensor_msgs/image_encodings.hpp>
- #include <cv_bridge/cv_bridge.h>
+ #include <cv_bridge/cv_bridge.hpp>
  #include <opencv2/opencv.hpp>
  
  namespace tod_gl {

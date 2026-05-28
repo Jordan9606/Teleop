@@ -203,6 +203,6 @@ namespace tod_rtsp {
             * @param appSink sink to pull the image from
             * @param stream stream object with the image publisher and the last timestamp
             */
-            static void new_image_sample(GstAppSink* appSink, RtspStream *stream);
+            static GstFlowReturn new_image_sample(GstAppSink* appSink, RtspStream *stream);
     };
 } //namespace tod_rtsp

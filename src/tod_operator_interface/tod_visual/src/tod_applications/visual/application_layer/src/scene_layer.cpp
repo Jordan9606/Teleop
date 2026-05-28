@@ -62,6 +62,7 @@ void VisualLayer::on_attach() {
 void VisualLayer::on_detach() {}
 
 void VisualLayer::on_update(float ts) {
+    if (!_scene_ready) return;
     _active_scene->on_update(ts);
     _time_step = ts;
 }
@@ -69,6 +70,7 @@ void VisualLayer::on_update(float ts) {
 void VisualLayer::on_im_gui_render() {}
 
 void VisualLayer::on_event(tod_gl::Event& e) {
+    if (!_scene_ready) return;
     tod_gl::EventDispatcher dispatcher(e);
 
     dispatcher.dispatch<tod_gl::WindowResizeEvent>(
@@ -86,7 +88,6 @@ void VisualLayer::on_event(tod_gl::Event& e) {
         [this](auto&&... args) { return this->handle_key_released_event(std::forward<decltype(args)>(args)...); });
 
     auto view = _active_scene->registry.view<tod_gl::CameraComponent>();
-    auto bf = _active_scene->find_entity_with_tag("base_footprint");
     for (auto entity : view) {
         auto& camera = _active_scene->registry.get<tod_gl::CameraComponent>(entity);
         if (camera.controllable) {
@@ -127,16 +128,15 @@ void VisualLayer::handle_mouse_moved_event(tod_gl::MouseMovedEvent& e) {
             auto [x, y] = cursorPosition.get_mouse_position();
             auto [width, height] = cursorPosition.get_viewport_dimensions();
 
-            auto floorTransform = _active_scene->find_entity_with_tag("floor").get_component<tod_gl::TransformComponent>();
+            tod_gl::Entity floorEntity = _active_scene->find_entity_with_tag("floor");
+            if (!floorEntity) return;
+            auto floorTransform = floorEntity.get_component<tod_gl::TransformComponent>();
 
-            _mouse_position = cursorPosition.get_real_world_coordinates(_active_scene->view, _active_scene->projection, x,
+            auto newPos = cursorPosition.get_real_world_coordinates(_active_scene->view, _active_scene->projection, x,
                                                                     y, width, height, floorTransform);
-
             std::lock_guard<std::mutex> lock(_mouse_position_mutex);
+            _mouse_position = newPos;
             _ros->set_mouse_moved_for_publish(_mouse_position);
-
-            // std::cout << "handle_mouse_button_pressed_event xr: " << _mouse_position.point.x << ", yr: " <<
-            // _mouse_position.point.y  << std::endl;
         }
     }
 }
@@ -173,9 +173,14 @@ void VisualLayer::handle_key_released_event(tod_gl::KeyReleasedEvent& e) {
 
 void VisualLayer::create_scene() {
     rclcpp::Rate r(10);
+    int wait_iters = 0;
     while (_cam_params->get_current_id() == "") {
         r.sleep();
         RCLCPP_INFO_THROTTLE(_ros->get_logger(), *_ros->get_clock(), 1000, "waiting for id");
+        if (++wait_iters > 300) {  // 30-second timeout
+            RCLCPP_ERROR(_ros->get_logger(), "Timed out waiting for vehicleID — scene creation aborted");
+            return;
+        }
     }
 
     // Load parameter default values after vehicleID was set
@@ -209,6 +214,7 @@ void VisualLayer::create_scene() {
             }
         }
     } 
+    _scene_ready = true;
     std::cout << "VisualLayer created" << std::endl;
 }
 
@@ -228,7 +234,6 @@ void VisualLayer::create_coodinate_system_entites() {
     _coordinate_systems.emplace(bf.get_component<tod_gl::TagComponent>().tag, bf);
     bf.get_component<tod_gl::TransformComponent>().set_parent(map);
 
-    std::string parentTag = bf.get_component<tod_gl::TagComponent>().tag;
     for (const auto& tf : _transform_params->get_transforms()) {
         const std::string& child = tf.child_frame_id;
         tod_gl::Entity newCosys = TodStaticEntities::CoordinateSystem::create(_active_scene, "Cosys" + child);
@@ -273,8 +278,8 @@ void VisualLayer::create_display_entites() {
 
 void VisualLayer::create_vehicle_model_entites() {
     std::string modelPath = _ros->get_config_path() + "/vehicle_config/" + _veh_params->get_current_id() + "/model-mesh/";
-    tod_gl::ModelLoader* loader =
-        new tod_gl::ModelLoader(_active_scene, modelPath);
+    auto loaderOwned = std::make_unique<tod_gl::ModelLoader>(_active_scene, modelPath);
+    tod_gl::ModelLoader* loader = loaderOwned.get();
     float zPos = 0.3f;
 
     tod_gl::Entity bf = _coordinate_systems.at("base_footprint");
@@ -320,9 +325,8 @@ void VisualLayer::create_grid_and_floor_entites() {
        _active_scene, "Grid", tod_gl::RosInterface::get_package_path());
     grid.get_component<tod_gl::TransformComponent>().is_map_frame = true;
     
-    tod_gl::Entity floor =
-        TodStaticEntities::Floor::create(_active_scene, "floor", tod_gl::RosInterface::get_package_path(),
-                                         _coordinate_systems.at("base_footprint"));
+    TodStaticEntities::Floor::create(_active_scene, "floor", tod_gl::RosInterface::get_package_path(),
+                                     _coordinate_systems.at("base_footprint"));
 }
 
 void VisualLayer::create_camera_and_framebuffer() {
@@ -346,11 +350,11 @@ void VisualLayer::create_video_renderers() {
     //TODO Change Name to match real name after config change
     //TODO Niklas: Do we use Fisheyes? RC-Car?
     create_video_renderer<tod_gl::ImageComponentFrontCenter>("frontcenter","frontcenter", false);
-    // create_video_renderer<tod_gl::ImageComponentFrontLeft>("frontleft","frontleft",false); 
+    // create_video_renderer<tod_gl::ImageComponentFrontLeft>("frontleft","frontleft",false);
     // create_video_renderer<tod_gl::ImageComponentFrontRight>("frontright","frontright",false);
     // create_video_renderer<tod_gl::ImageComponentRearCenter>("rearcenter","rearcenter",false);
-    // create_video_renderer<tod_gl::ImageComponentRearLeft>("rearleft","rearleft",false); 
-    // create_video_renderer<tod_gl::ImageComponentRearRight>("rearright","rearright",false);
+    create_video_renderer<tod_gl::ImageComponentRearLeft>("rearleft","rearleft",false);
+    create_video_renderer<tod_gl::ImageComponentRearRight>("rearright","rearright",false);
 }
 
 

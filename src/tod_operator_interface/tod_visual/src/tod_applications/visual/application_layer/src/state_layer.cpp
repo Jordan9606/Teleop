@@ -36,7 +36,7 @@ void StateLayer::on_attach() {
     }
 
     stateManager.register_layer("Left", {tod_status_msgs::msg::Status::CONTROL_MODE_NONE,tod_status_msgs::msg::Status::CONTROL_MODE_PATH_GUIDANCE});
-    stateManager.register_layer("Center", {tod_status_msgs::msg::Status::CONTROL_MODE_NONE,tod_status_msgs::msg::Status::CONTROL_MODE_PATH_GUIDANCE});
+    stateManager.register_layer("Center", {tod_status_msgs::msg::Status::CONTROL_MODE_NONE,tod_status_msgs::msg::Status::CONTROL_MODE_PATH_GUIDANCE,tod_status_msgs::msg::Status::CONTROL_MODE_DIRECT});
     stateManager.register_layer("Right", {tod_status_msgs::msg::Status::CONTROL_MODE_NONE,tod_status_msgs::msg::Status::CONTROL_MODE_PATH_GUIDANCE});
     stateManager.register_layer("TrajectoryGuidanceStateLayer", {tod_status_msgs::msg::Status::CONTROL_MODE_NONE,tod_status_msgs::msg::Status::CONTROL_MODE_PATH_GUIDANCE});
 

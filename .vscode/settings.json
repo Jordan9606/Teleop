@@ -10,5 +10,6 @@
     ],
     // Git settings
     "git.autoRepositoryDetection": true,
-    "git.repositoryScanMaxDepth": 3
+    "git.repositoryScanMaxDepth": 3,
+    "cmake.sourceDirectory": "/home/jordan/teleoperated_driving/src/tod_launch"
 }

@@ -14,6 +14,7 @@ endif()
 include_directories(include)
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(tod_operator_msgs REQUIRED)
 find_package(tod_status_msgs REQUIRED)
