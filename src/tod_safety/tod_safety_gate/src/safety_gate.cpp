@@ -61,8 +61,8 @@ void tod_safety_gate::SafetyGateNode::primary_control_command_callback(
 void tod_safety_gate::SafetyGateNode::secondary_control_command_callback(
     const tod_vehicle_msgs::msg::SecondaryControlCmd::SharedPtr msg) {
     if (tod_status_ == tod_status_msgs::msg::Status::TOD_STATUS_TELEOPERATION &&
-            (topic_state_ == tod_topic_monitoring_msgs::msg::TopicState::STATE_OK) ||
-        (topic_state_ == tod_topic_monitoring_msgs::msg::TopicState::STATE_WARN)) {
+            (topic_state_ == tod_topic_monitoring_msgs::msg::TopicState::STATE_OK ||
+             topic_state_ == tod_topic_monitoring_msgs::msg::TopicState::STATE_WARN)) {
         secondary_control_cmd_publisher_->publish(*msg);
     }
 }

@@ -40,6 +40,8 @@ docker run -d \
   -e CARLA_PORT=2000 \
   -e CARLA_VEHICLE=vehicle.tesla.model3 \
   -e CARLA_SPAWN_INDEX=0 \
+  -v "${REPO_DIR}/config/dds/zerotier.xml:/tmp/cyclonedds.xml:ro" \
+  -v "${REPO_DIR}/software-stack-main/bridge/bridge_node.py:/bridge/bridge_node.py:ro" \
   jazzy-project-group-test1-carla-bridge:latest
 
 echo "[lab] Starting tod_vehicle..."

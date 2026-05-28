@@ -16,6 +16,8 @@ until python3 -c "import carla; c=carla.Client('127.0.0.1',2000); c.set_timeout(
 done
 echo "[sim] CARLA ready."
 
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 echo "[sim] Starting CARLA bridge..."
 docker rm -f carla-ros2-bridge 2>/dev/null || true
 docker run -d \
@@ -28,6 +30,8 @@ docker run -d \
   -e CARLA_PORT=2000 \
   -e CARLA_VEHICLE=vehicle.tesla.model3 \
   -e CARLA_SPAWN_INDEX=0 \
+  -v "${REPO_DIR}/config/dds/zerotier.xml:/tmp/cyclonedds.xml:ro" \
+  -v "${REPO_DIR}/software-stack-main/bridge/bridge_node.py:/bridge/bridge_node.py:ro" \
   -v /home/jordan/teleoperated_driving/.dev_artifacts/install:/tum_install:ro \
   -v /home/jordan/teleoperated_driving/.dev_artifacts/build:/build:ro \
   jazzy-project-group-test1-carla-bridge:latest
