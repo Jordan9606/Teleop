@@ -59,6 +59,8 @@ void RtspStream::factory_gst_video_pipeline(GstRTSPMountPoints *_gstMounts){
     this->factory = gst_rtsp_media_factory_new();
     // configure this pipeline
     gst_rtsp_media_factory_set_launch(this->factory, h264_launch_string.c_str());
+    // shared media: one persistent pipeline per stream — prevents on_unprepared race on fast reconnect
+    gst_rtsp_media_factory_set_shared(this->factory, TRUE);
     // callback when client connects
     g_signal_connect(this->factory, "media-configure", (GCallback)static_gst_media_configure, this);
     // attach factory to url

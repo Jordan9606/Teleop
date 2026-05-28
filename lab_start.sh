@@ -48,6 +48,19 @@ docker run -d \
 echo "[lab] Starting tod_vehicle..."
 docker compose -f "${REPO_DIR}/docker-compose.yaml" up -d tod_vehicle
 
+echo "[lab] Waiting for VehicleRtspServer on port 8554..."
+until nc -z 127.0.0.1 8554 2>/dev/null; do sleep 1; done
+sleep 3
+
+echo "[lab] Pre-warming RTSP encoders (initializes GStreamer pipelines before bandwidth monitor fires)..."
+for stream in frontcenter rearleft rearright; do
+    docker exec carla-ros2-bridge bash -c \
+        "timeout 8 gst-launch-1.0 -q rtspsrc location=rtsp://127.0.0.1:8554/${stream} num-buffers=3 latency=0 ! fakesink 2>/dev/null" \
+        2>/dev/null || true
+    echo "[lab] pre-warmed ${stream}"
+done
+echo "[lab] RTSP encoders ready."
+
 echo "[lab] Starting RTSP watchdog (auto-restarts tod_vehicle on RtspServer crash)..."
 pkill -f rtsp_watchdog.sh 2>/dev/null || true
 nohup bash "${REPO_DIR}/rtsp_watchdog.sh" >> /tmp/rtsp_watchdog.log 2>&1 &
