@@ -123,7 +123,7 @@ class CarlaBridgeNode(Node):
         self._is_reverse = False
         self._last_hb_time = time.monotonic()
         self._hb_lost = False
-        self._HB_TIMEOUT = 0.3
+        self._HB_TIMEOUT = 1.5
         self._current_goal = None
 
         # ── Connect to CARLA ──────────────────────────────────────────────────
