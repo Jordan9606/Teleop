@@ -2,3 +2,4 @@
 /tasks
 /autoware-stack/autoware
 /carla-stack/carla-home
+.env

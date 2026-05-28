@@ -16,6 +16,9 @@ if [ -f /tum_install/setup.bash ]; then
     source /tum_install/setup.bash
 fi
 
+echo "[bridge] Starting BEV monitor server on port 8080..."
+python3 /bridge/bev_server.py &
+
 echo "[bridge] Starting CARLA bridge node..."
 exec python3 /bridge/bridge_node.py \
     --ros-args \

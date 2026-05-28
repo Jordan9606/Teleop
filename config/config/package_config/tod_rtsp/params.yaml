@@ -3,7 +3,7 @@
     ros__parameters:
       rtsp_port: 8554
       image_output_format: "rgb8"
-      inactivity_timeout: 3.0
+      inactivity_timeout: 30.0
   operator_rtsp_clients:
     ros__parameters:
       rtsp_port: 8554

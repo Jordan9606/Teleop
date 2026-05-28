@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip3 install --break-system-packages carla==0.9.16 \
     || pip3 install --break-system-packages carla==0.9.15 \
     || pip3 install --break-system-packages carla
+RUN pip3 install --break-system-packages Pillow
 
 # ── TUM message packages (full install — includes autoware_auto_msgs) ────────
 # Copying the full install ensures autoware_auto_vehicle_msgs and
@@ -28,6 +29,7 @@ COPY cyclonedds.xml /tmp/cyclonedds.xml
 
 # ── Bridge source ─────────────────────────────────────────────────────────────
 COPY bridge_node.py /bridge/bridge_node.py
+COPY bev_server.py  /bridge/bev_server.py
 COPY start.sh /bridge/start.sh
 RUN chmod +x /bridge/start.sh
 

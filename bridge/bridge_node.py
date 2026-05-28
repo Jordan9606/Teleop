@@ -236,17 +236,8 @@ class CarlaBridgeNode(Node):
         self._edgar_front_pub = self.create_publisher(
             Image, "/edgar/sensor/camera/basler/frontcenter/image_resized", 10
         )
-        self._edgar_frontleft_pub = self.create_publisher(
-            Image, "/edgar/sensor/camera/basler/frontleft/image_resized", 10
-        )
-        self._edgar_frontright_pub = self.create_publisher(
-            Image, "/edgar/sensor/camera/basler/frontright/image_resized", 10
-        )
         self._edgar_left_pub = self.create_publisher(
             Image, "/edgar/sensor/camera/basler/rearleft/image_resized", 10
-        )
-        self._edgar_rearcenter_pub = self.create_publisher(
-            Image, "/edgar/sensor/camera/basler/rearcenter/image_resized", 10
         )
         self._edgar_right_pub = self.create_publisher(
             Image, "/edgar/sensor/camera/basler/rearright/image_resized", 10
@@ -377,9 +368,6 @@ class CarlaBridgeNode(Node):
         img_msg = self._carla_image_to_ros(image, "ego_vehicle/frontcenter")
         self._camera_pub.publish(img_msg)
         self._edgar_front_pub.publish(img_msg)
-        self._edgar_frontleft_pub.publish(img_msg)
-        self._edgar_frontright_pub.publish(img_msg)
-        self._edgar_rearcenter_pub.publish(img_msg)
         fx = fy = float(image.width) / (2.0 * math.tan(math.radians(60.0)))
         cx, cy = float(image.width) / 2.0, float(image.height) / 2.0
         ci = CameraInfo()
