@@ -233,6 +233,24 @@ class CarlaBridgeNode(Node):
         self._right_camera_pub = self.create_publisher(
             Image, "/operator/network/video/rearright/image", qos_profile_sensor_data
         )
+        self._edgar_front_pub = self.create_publisher(
+            Image, "/edgar/sensor/camera/basler/frontcenter/image_resized", 10
+        )
+        self._edgar_frontleft_pub = self.create_publisher(
+            Image, "/edgar/sensor/camera/basler/frontleft/image_resized", 10
+        )
+        self._edgar_frontright_pub = self.create_publisher(
+            Image, "/edgar/sensor/camera/basler/frontright/image_resized", 10
+        )
+        self._edgar_left_pub = self.create_publisher(
+            Image, "/edgar/sensor/camera/basler/rearleft/image_resized", 10
+        )
+        self._edgar_rearcenter_pub = self.create_publisher(
+            Image, "/edgar/sensor/camera/basler/rearcenter/image_resized", 10
+        )
+        self._edgar_right_pub = self.create_publisher(
+            Image, "/edgar/sensor/camera/basler/rearright/image_resized", 10
+        )
         self._camera_info_pub = self.create_publisher(
             CameraInfo, "/carla/ego_vehicle/frontcenter/cam_info", 10
         )
@@ -276,8 +294,8 @@ class CarlaBridgeNode(Node):
     def _attach_rgb_camera(self):
         bp_lib = self._world.get_blueprint_library()
         cam_bp = bp_lib.find("sensor.camera.rgb")
-        cam_bp.set_attribute("image_size_x", "640")
-        cam_bp.set_attribute("image_size_y", "360")
+        cam_bp.set_attribute("image_size_x", "960")
+        cam_bp.set_attribute("image_size_y", "600")
         cam_bp.set_attribute("fov", "120")
         transform = carla.Transform(
             carla.Location(x=2.0, y=0.0, z=1.4),
@@ -290,8 +308,8 @@ class CarlaBridgeNode(Node):
     def _attach_side_camera(self, yaw: float, label: str):
         bp_lib = self._world.get_blueprint_library()
         cam_bp = bp_lib.find("sensor.camera.rgb")
-        cam_bp.set_attribute("image_size_x", "640")
-        cam_bp.set_attribute("image_size_y", "360")
+        cam_bp.set_attribute("image_size_x", "960")
+        cam_bp.set_attribute("image_size_y", "600")
         cam_bp.set_attribute("fov", "120")
         transform = carla.Transform(
             carla.Location(x=-0.5, y=0.0, z=1.7),
@@ -356,7 +374,12 @@ class CarlaBridgeNode(Node):
         if self._front_frame_count % 2 != 0:
             return
         now = self.get_clock().now().to_msg()
-        self._camera_pub.publish(self._carla_image_to_ros(image, "ego_vehicle/frontcenter"))
+        img_msg = self._carla_image_to_ros(image, "ego_vehicle/frontcenter")
+        self._camera_pub.publish(img_msg)
+        self._edgar_front_pub.publish(img_msg)
+        self._edgar_frontleft_pub.publish(img_msg)
+        self._edgar_frontright_pub.publish(img_msg)
+        self._edgar_rearcenter_pub.publish(img_msg)
         fx = fy = float(image.width) / (2.0 * math.tan(math.radians(60.0)))
         cx, cy = float(image.width) / 2.0, float(image.height) / 2.0
         ci = CameraInfo()
@@ -374,13 +397,17 @@ class CarlaBridgeNode(Node):
         self._left_frame_count += 1
         if self._left_frame_count % 2 != 0:
             return
-        self._left_camera_pub.publish(self._carla_image_to_ros(image, "ego_vehicle/leftcenter"))
+        img_msg = self._carla_image_to_ros(image, "ego_vehicle/leftcenter")
+        self._left_camera_pub.publish(img_msg)
+        self._edgar_left_pub.publish(img_msg)
 
     def _on_right_camera_image(self, image):
         self._right_frame_count += 1
         if self._right_frame_count % 2 != 0:
             return
-        self._right_camera_pub.publish(self._carla_image_to_ros(image, "ego_vehicle/rightcenter"))
+        img_msg = self._carla_image_to_ros(image, "ego_vehicle/rightcenter")
+        self._right_camera_pub.publish(img_msg)
+        self._edgar_right_pub.publish(img_msg)
 
     # ── Heartbeat ─────────────────────────────────────────────────────────────
 

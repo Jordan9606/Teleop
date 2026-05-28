@@ -52,8 +52,7 @@ services:
     stdin_open: true
     tty: true
 
-    # Remove -RenderOffScreen below to see the CARLA window (needs DISPLAY set)
-    command: /bin/bash -c "/workspace/CarlaUE4.sh -quality-level=Low -world-port=2000"
+    command: /bin/bash -c "/workspace/CarlaUE4.sh -quality-level=Low -world-port=2000 -RenderOffScreen"
 
 
   carla-bridge:
@@ -80,11 +79,6 @@ services:
       # Index into the map's spawn point list
       - CARLA_SPAWN_INDEX=0
 
-    volumes:
-      # Mount the TUM workspace install so the bridge can use tod_vehicle_msgs
-      # Also mount build/ because --symlink-install creates links from install/ → build/
-      - /home/jordan/teleoperated_driving/.dev_artifacts/install:/tum_install:ro
-      - /home/jordan/teleoperated_driving/.dev_artifacts/build:/build:ro
 
     stdin_open: true
     tty: true
