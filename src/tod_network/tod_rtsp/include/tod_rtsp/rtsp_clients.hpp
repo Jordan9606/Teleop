@@ -17,6 +17,7 @@
 #include <memory>
 #include <vector>
 #include <mutex>
+#include <atomic>
 #include <chrono>
 
 #include <rclcpp/rclcpp.hpp>
@@ -60,6 +61,8 @@ namespace tod_rtsp {
 
             std::mutex mutex;
             GstElement *pipeline{nullptr};
+            guint bus_watch_id{0};
+            std::atomic<bool> reconnecting{false};
             GstRTPBuffer rtpPaket = GST_RTP_BUFFER_INIT;
             int rtpPaketCount{0}, frameCount{0}, pktSizeSum_bit{0};
             int bitrate_kbit{0}, framerate{0}, imgHeight_px{0}, imgWidth_px{0};
@@ -72,6 +75,7 @@ namespace tod_rtsp {
             RtspStream( CameraObject* camera, bool jpg,std::string streamNumber,  const std::string &outputFormat) :
                 name{camera->camera},
                 imageOutputFormat{outputFormat},
+                lastVideoInfoCalc{std::chrono::system_clock::now()},
                 isJpeg{jpg} {
                 // support for camera names with dots: ros topic names with 'DOT', uris with '.'
                 std::string str2find = "DOT";
@@ -145,6 +149,7 @@ namespace tod_rtsp {
             std::vector<std::shared_ptr<CameraObject>> _cameras;
             int _latency{500};
             bool _connected{false};
+            std::string _vehicle_ip;
             std::map<std::string, std::string> _color_format = {
                 {"i420", "I420"},
                 {sensor_msgs::image_encodings::RGB8, "RGB"},

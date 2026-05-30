@@ -114,6 +114,40 @@ namespace tod_rtsp{
                     stream->pubVideoInfo->publish(msg);
                 }
             }
+
+            // Auto-reconnect any pipeline that died while connected (e.g. network error detected via GST_MESSAGE_ERROR)
+            if (_connected && !_vehicle_ip.empty()) {
+                for (auto cam : _cameras) {
+                    for (size_t i = 0; i < cam->_streams.size(); ++i) {
+                        auto stream = cam->_streams[i];
+                        bool dead;
+                        {
+                            std::lock_guard<std::mutex> lock(stream->mutex);
+                            dead = (stream->pipeline == nullptr);
+                        }
+                        if (dead && !stream->reconnecting.exchange(true)) {
+                            std::string ip;
+                            if (i == 0) {
+                                ip = _vehicle_ip;
+                            } else {
+                                if (_ips.size() > 0 && (_ips[i-1] != _vehicle_ip)) {
+                                    ip = _ips[i-1];
+                                } else {
+                                    stream->reconnecting = false;
+                                    continue;
+                                }
+                            }
+                            RCLCPP_WARN(this->get_logger(), "%s: stream %s pipeline dead — reconnecting to %s",
+                                        _nn.c_str(), stream->name.c_str(), ip.c_str());
+                            std::thread([this, stream, ip]() {
+                                connect_video_client(stream, ip);
+                                stream->reconnecting = false;
+                            }).detach();
+                        }
+                    }
+                }
+            }
+
             r.sleep();
         }
 
@@ -214,27 +248,34 @@ namespace tod_rtsp{
     }
 
 
-    void RtspClients::callback_status_msg(const tod_status_msgs::msg::Status &msg) 
+    void RtspClients::callback_status_msg(const tod_status_msgs::msg::Status &msg)
     {
         bool connected = (msg.tod_status != tod_status_msgs::msg::Status::TOD_STATUS_IDLE);
         if (connected && !_connected) {
-            // on connect
-            for (auto cam : _cameras){
+            _vehicle_ip = msg.vehicle_ip_address;
+            // Launch each stream connect in its own thread — avoids one slow rtspsrc blocking the rest
+            for (auto cam : _cameras) {
                 for (size_t i = 0; i < cam->_streams.size(); ++i) {
                     auto stream = cam->_streams[i];
-                    if(i==0){
-                        connect_video_client(stream, msg.vehicle_ip_address);
-                    }else{
-                        if(_ips.size() > 0 && (_ips[i-1] != msg.vehicle_ip_address)){
-                            connect_video_client(stream, _ips[i-1]);
+                    std::string ip;
+                    if (i == 0) {
+                        ip = msg.vehicle_ip_address;
+                    } else {
+                        if (_ips.size() > 0 && (_ips[i-1] != msg.vehicle_ip_address)) {
+                            ip = _ips[i-1];
+                        } else {
+                            continue;
                         }
                     }
+                    std::thread([this, stream, ip]() {
+                        connect_video_client(stream, ip);
+                    }).detach();
                 }
             }
         }
         if (!connected && _connected) {
-            // on disconnect
-            for (auto cam : _cameras){
+            _vehicle_ip.clear();
+            for (auto cam : _cameras) {
                 for (auto stream : cam->_streams) {
                     disconnect_video_client(stream);
                 }
@@ -250,13 +291,36 @@ namespace tod_rtsp{
                 GstElement *pipeline_to_free = nullptr;
                 {
                     std::lock_guard<std::mutex> lock(stream->mutex);
-                    if (!stream->pipeline) return FALSE;  // disconnect_video_client already cleaned up
+                    if (!stream->pipeline) return FALSE;
                     pipeline_to_free = stream->pipeline;
                     stream->pipeline = nullptr;
+                    stream->bus_watch_id = 0;  // removed by returning FALSE
                 }
                 gst_element_set_state(pipeline_to_free, GST_STATE_NULL);
                 gst_object_unref(pipeline_to_free);
-                return FALSE;  // removes this bus watch
+                return FALSE;
+            }
+            case GST_MESSAGE_ERROR: {
+                GError *err = nullptr;
+                gchar *debug_info = nullptr;
+                gst_message_parse_error(message, &err, &debug_info);
+                RCLCPP_ERROR(RtspClients::get_logger(), "GStreamer error on stream %s: %s (%s)",
+                             stream->name.c_str(),
+                             err ? err->message : "unknown",
+                             debug_info ? debug_info : "no debug info");
+                g_clear_error(&err);
+                g_free(debug_info);
+                GstElement *pipeline_to_free = nullptr;
+                {
+                    std::lock_guard<std::mutex> lock(stream->mutex);
+                    if (!stream->pipeline) return FALSE;
+                    pipeline_to_free = stream->pipeline;
+                    stream->pipeline = nullptr;
+                    stream->bus_watch_id = 0;
+                }
+                gst_element_set_state(pipeline_to_free, GST_STATE_NULL);
+                gst_object_unref(pipeline_to_free);
+                return FALSE;  // pipeline dead — run() reconnect loop will retry
             }
             default:
                 break;
@@ -365,33 +429,39 @@ namespace tod_rtsp{
         // Log the successful start of the stream
         RCLCPP_INFO(this->get_logger(), "%s: Started streaming %s from uri %s", _nn.c_str(), stream->name.c_str(), uri.c_str());
 
-        // Assign under lock so on_gst_message (GLib thread) sees a consistent value
+        // Add bus watch BEFORE PLAYING so no error/EOS messages are missed
+        GstBus *bus = gst_element_get_bus(new_pipeline);
+        guint watch_id = gst_bus_add_watch(bus, (GstBusFunc)on_gst_message, stream.get());
+        gst_object_unref(bus);
+
+        // Assign pipeline + watch_id together under lock — GLib thread may call on_gst_message immediately
         {
             std::lock_guard<std::mutex> lock(stream->mutex);
             stream->pipeline = new_pipeline;
+            stream->bus_watch_id = watch_id;
         }
 
-        // Set the pipeline to the PLAYING state
+        // Start the pipeline
         gst_element_set_state(new_pipeline, GST_STATE_PLAYING);
-
-        // Add a message watch to the bus for handling GStreamer messages
-        GstBus *bus = gst_element_get_bus(new_pipeline);
-        gst_bus_add_watch(bus, (GstBusFunc)on_gst_message, stream.get());
-        gst_object_unref(bus);
     }
 
 
     void RtspClients::disconnect_video_client(std::shared_ptr<RtspStream> stream)
     {
         GstElement *pipeline_to_free = nullptr;
+        guint watch_id = 0;
         {
             std::lock_guard<std::mutex> lock(stream->mutex);
             if (!stream->pipeline) return;
             pipeline_to_free = stream->pipeline;
-            stream->pipeline = nullptr;  // null under lock so on_gst_message sees nullptr
+            stream->pipeline = nullptr;
+            watch_id = stream->bus_watch_id;
+            stream->bus_watch_id = 0;
         }
-        // GStreamer state changes outside lock — avoids deadlock if GLib loop calls on_gst_message
-        gst_element_send_event(pipeline_to_free, gst_event_new_eos());
+        // Remove bus watch before tearing down — prevents orphaned watch accumulating on each reconnect
+        if (watch_id != 0) {
+            g_source_remove(watch_id);
+        }
         gst_element_set_state(pipeline_to_free, GST_STATE_NULL);
         gst_object_unref(pipeline_to_free);
         RCLCPP_INFO(this->get_logger(), "%s: Stopped streaming %s", _nn.c_str(), stream->name.c_str());

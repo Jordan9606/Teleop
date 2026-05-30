@@ -91,6 +91,7 @@ void RtspStream::refresh(GstRTSPMountPoints *gstMounts){
 }
 
 void RtspStream::reset(){
+    std::lock_guard lock(this->mutex_);
     if (!this->videocrop_ || !this->scalingFilter_) return;
     g_object_set(G_OBJECT(this->videocrop_), "top", 0, "bottom", 0, "left", 0, "right", 0, nullptr);
     GstCaps *caps = gst_caps_new_simple("video/x-raw",
@@ -329,9 +330,15 @@ void RtspStream::static_gst_media_configure(GstRTSPMediaFactory *factory, GstRTS
 void RtspStream::gst_need_data(GstElement *appsrc_, guint unused){
     std::lock_guard lock(this->mutex_);
     this->gst_data_request_ = true;
-    this->gst_last_request_ = std::chrono::system_clock::time_point(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds(this->latest_image_->header.stamp.sec)) \
-        + std::chrono::nanoseconds(this->latest_image_->header.stamp.nanosec));
+    // Only use ROS image stamp if it's non-zero — an uninitialized stamp (epoch) would make
+    // is_inactive() return true immediately, pausing the stream before any data arrives
+    if (this->latest_image_->header.stamp.sec != 0 || this->latest_image_->header.stamp.nanosec != 0) {
+        this->gst_last_request_ = std::chrono::system_clock::time_point(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds(this->latest_image_->header.stamp.sec))
+            + std::chrono::nanoseconds(this->latest_image_->header.stamp.nanosec));
+    } else {
+        this->gst_last_request_ = std::chrono::system_clock::now();
+    }
     this->gst_last_request_ns_.store(
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             this->gst_last_request_.time_since_epoch()).count());
