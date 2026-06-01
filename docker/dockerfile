@@ -102,7 +102,9 @@ USER ${DOCKER_USERNAME}
 ###--- Install dependencies via rosdep -----------------------------------------###
 RUN --mount=type=bind,source=src,target=/home/${DOCKER_USERNAME}/wsp/src \
     rosdep update \
-    && rosdep install --from-paths src --ignore-src --rosdistro ${ROS_DISTRO} -y 
+    && rosdep install --from-paths src --ignore-src --rosdistro ${ROS_DISTRO} -y \
+        --skip-keys "tier4_external_api_msgs autoware_auto_vehicle_msgs autoware_auto_planning_msgs autoware_auto_control_msgs autoware_auto_perception_msgs" \
+        || true
 
 ###--- Source entrypoint -------------------------------------------------------###
 RUN echo "source /entrypoint.sh" >> /home/${DOCKER_USERNAME}/.bashrc
@@ -166,7 +168,8 @@ WORKDIR /home/${DOCKER_USERNAME}/wsp
 RUN --mount=type=bind,source=src,target=/home/${DOCKER_USERNAME}/wsp/src \
     rosdep update \
     && sudo apt-get update \
-    && rosdep install --from-paths src --ignore-src --rosdistro ${ROS_DISTRO} -y
+    && rosdep install --from-paths src --ignore-src --rosdistro ${ROS_DISTRO} -y \
+        --skip-keys "tier4_external_api_msgs autoware_auto_vehicle_msgs autoware_auto_planning_msgs"
 
 ###--- Source entrypoint -------------------------------------------------------###
 RUN echo "source /entrypoint.sh" >> /home/${DOCKER_USERNAME}/.bashrc
