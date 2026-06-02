@@ -267,8 +267,10 @@ namespace tod_rtsp{
                             continue;
                         }
                     }
+                    stream->reconnecting = true;  // block run() reconnect loop until this completes
                     std::thread([this, stream, ip]() {
                         connect_video_client(stream, ip);
+                        stream->reconnecting = false;
                     }).detach();
                 }
             }
